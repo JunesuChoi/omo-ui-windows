@@ -144,6 +144,23 @@ const userEntry = (text) => ({
   message: { role: "user", content: [{ type: "text", text }], timestamp: Date.now() },
 });
 
+function expandSkills(text) {
+  const blocks = new Map();
+  let rest = text;
+  while (rest.startsWith("/skill:")) {
+    const token = /^\/skill:([\w-]+)(?:\s+|$)/.exec(rest);
+    if (token === null || !DEFAULT_SKILLS.some((skill) => skill.name === token[1])) break;
+    const name = token[1];
+    if (!blocks.has(name)) {
+      if (blocks.size === 5) break;
+      const body = name === "ulw-loop" ? "Run the loop." : name === "mass-ulw" ? "Dispatch the workflow." : `Run ${name}.`;
+      blocks.set(name, `<skill name="${name}" location="/fake/skills/${name}/SKILL.md">\nReferences are relative to /fake/skills/${name}.\n\n${body}\n</skill>`);
+    }
+    rest = rest.slice(token[0].length);
+  }
+  return blocks.size === 0 ? text : [...blocks.values(), ...(rest === "" ? [] : [rest])].join("\n\n");
+}
+
 const assistantEntry = (content, stopReason) => ({
   type: "message",
   message: {
@@ -413,6 +430,18 @@ async function runFull(record, turn) {
 }
 
 function runScenario(record, turn, text) {
+  if (text === "SCENARIO:skills-history") {
+    const item = openAgentMessage(turn);
+    appendAgentDelta(turn, item, "Built the thing.");
+    closeAgentMessage(record, turn, item, "stop");
+    recordEntry(record, {
+      type: "custom_message",
+      customType: "omo-mass-ulw:skill-pointer",
+      content: "<omo-mass-ulw-pointer>Hidden skill pointer.</omo-mass-ulw-pointer>",
+      display: false,
+    });
+    return;
+  }
   if (text.includes("SCENARIO:silent-error")) {
     const entry = assistantEntry([{ type: "text", text: "" }], "error");
     entry.message.errorMessage = "402: Insufficient Balance";
@@ -465,7 +494,9 @@ async function runTurn(record, turn, input, clientId) {
   startItem(turn, { type: "userMessage", id: nextItemId(turn), clientId: clientId ?? null, content: input });
   finishItem(turn, turn.wire.items[0]);
   if (record.thread.preview === "") record.thread.preview = text;
-  recordEntry(record, userEntry(text));
+  recordEntry(record, userEntry(expandSkills(
+    text === "SCENARIO:skills-history" ? "/skill:ulw-loop /skill:mass-ulw build the thing" : text,
+  )));
 
   try {
     await runScenario(record, turn, text);
