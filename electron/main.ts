@@ -135,7 +135,9 @@ function run(): void {
     void Promise.race([stopped, bounded]).finally(() => {
       clearTimeout(timer);
       quitPhase = "done";
-      app.quit();
+      // With no omo child, stop() settles inside Electron's native before-quit dispatch (Cmd+Q, the Dock's Quit,
+      // SIGTERM); an app.quit() made there is discarded with the prevented quit, so quit again from a new task.
+      setImmediate(() => app.quit());
     });
   });
 }
