@@ -26,6 +26,7 @@ fi
 DEST="$DEST_DIR/$APP_NAME.app"
 rm -rf "$DEST"
 ditto "$SOURCE" "$DEST"
-xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
+# The system xattr: a Python xattr earlier in PATH lacks -r.
+/usr/bin/xattr -dr com.apple.quarantine "$DEST"
 
 echo "Installed $DEST"
