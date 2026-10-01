@@ -43,6 +43,14 @@ class FakeClient implements SupervisedClient {
   onServerRequest(): () => void {
     return () => undefined;
   }
+  private malformedListener: ((line: string, error: Error) => void) | null = null;
+  onMalformed(listener: (line: string, error: Error) => void): () => void {
+    this.malformedListener = listener;
+    return () => undefined;
+  }
+  emitMalformed(line: string): void {
+    this.malformedListener?.(line, new Error("Unexpected token"));
+  }
   onExit(listener: (info: ExitInfo) => void): () => void {
     this.exitListener = listener;
     return () => undefined;
@@ -124,6 +132,27 @@ describe("OmoSupervisor", () => {
     expect(clients).toHaveLength(2);
     expect(supervisor.getStatus().restartAttempt).toBe(0);
     await supervisor.stop();
+  });
+
+  it("logs a malformed app-server line by its length, never its text", async () => {
+    const client = new FakeClient(INIT);
+    const supervisor = new OmoSupervisor({
+      homeDir: "/h",
+      baseEnv: {},
+      clientVersion: "0.0.0-test",
+      resolveEnv: loginEnv,
+      locate: async () => ({ ok: true, binary }),
+      createClient: () => client,
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      await supervisor.start();
+      client.emitMalformed("secret prompt text {");
+      expect(warn.mock.calls).toEqual([["[omo-ui] ignored a malformed line from omo app-server (20 characters): Unexpected token"]]);
+    } finally {
+      warn.mockRestore();
+      await supervisor.stop();
+    }
   });
 
   it("stop() cancels a scheduled restart", async () => {

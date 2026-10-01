@@ -11,7 +11,7 @@ import type { LoginShellEnv, ResolveLoginShellEnvOptions } from "./shell-env";
 /** The AppServerClient surface the supervisor uses; tests inject fakes through createClient. */
 export type SupervisedClient = Pick<
   AppServerClient,
-  "start" | "stop" | "request" | "respond" | "onNotification" | "onServerRequest" | "onExit" | "pid" | "initializeResult"
+  "start" | "stop" | "request" | "respond" | "onNotification" | "onServerRequest" | "onMalformed" | "onExit" | "pid" | "initializeResult"
 >;
 
 export interface OmoSupervisorOptions {
@@ -196,6 +196,10 @@ export class OmoSupervisor {
     });
     client.onServerRequest((request) => {
       if (this.client === client) for (const listener of [...this.serverRequestListeners]) listener(request);
+    });
+    // The line itself is not logged: it may carry conversation text.
+    client.onMalformed((line, error) => {
+      if (this.client === client) console.warn(`[omo-ui] ignored a malformed line from omo app-server (${line.length} characters): ${error.message}`);
     });
     client.onExit((info) => {
       if (this.client === client && this.status.state === "connected" && !info.expected) this.handleExit(info);
