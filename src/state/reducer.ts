@@ -66,7 +66,7 @@ function fromHistoryTurn(turn: HistoryTurn): ConversationTurn {
   return {
     id: turn.id,
     status: turn.status,
-    error: null,
+    error: turn.error,
     items: wireItems(turn.items, false),
     startedAtMs: turn.startedAt,
     completedAtMs: turn.completedAt,

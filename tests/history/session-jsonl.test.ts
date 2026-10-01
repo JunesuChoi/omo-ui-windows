@@ -34,6 +34,7 @@ describe("parseSessionJsonl", () => {
     expect(turns).toHaveLength(2);
     const [first, second] = turns;
     expect(first?.status).toBe("completed");
+    expect(first?.error).toBeNull();
     expect(first?.items.map((item) => item.type)).toEqual(["userMessage", "agentMessage"]);
     expect(first?.items[0]).toMatchObject({
       type: "userMessage",
@@ -86,6 +87,38 @@ describe("parseSessionJsonl", () => {
     const text = jsonl([user("u1", null, 1, "go"), assistant("a1", "u1", 2, [], "error")]);
 
     expect(parseSessionJsonl(text)[0]?.status).toBe("failed");
+    expect(parseSessionJsonl(text)[0]?.error).toBeNull();
+  });
+
+  it("keeps the provider error from an empty assistant message", () => {
+    const text = jsonl([
+      user("u1", null, 1, "go"),
+      message("a1", "u1", 2, {
+        role: "assistant", content: [{ type: "text", text: "" }], stopReason: "error",
+        errorMessage: "402: Insufficient Balance", provider: "deepseek",
+      }),
+    ]);
+    expect(parseSessionJsonl(text)[0]).toMatchObject({
+      status: "failed", error: { message: "402: Insufficient Balance" },
+    });
+  });
+
+  it("keeps the last provider error in a turn", () => {
+    const text = jsonl([
+      user("u1", null, 1, "go"),
+      message("a1", "u1", 2, { role: "assistant", content: [], stopReason: "error", errorMessage: "timeout" }),
+      message("a2", "a1", 3, { role: "assistant", content: [], stopReason: "error", errorMessage: "402: Insufficient Balance" }),
+    ]);
+    expect(parseSessionJsonl(text)[0]?.error).toEqual({ message: "402: Insufficient Balance" });
+  });
+
+  it("drops a provider error once a later assistant message in the turn succeeds", () => {
+    const text = jsonl([
+      user("u1", null, 1, "go"),
+      message("a1", "u1", 2, { role: "assistant", content: [], stopReason: "error", errorMessage: "timeout" }),
+      assistant("a2", "a1", 3, [{ type: "text", text: "pong" }]),
+    ]);
+    expect(parseSessionJsonl(text)[0]).toMatchObject({ status: "completed", error: null });
   });
 
   it("marks a tool call failed when its result has isError", () => {

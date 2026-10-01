@@ -1,5 +1,5 @@
 import type { HistoryTurn } from "../../shared/ipc";
-import type { DynamicToolCallContentItem, DynamicToolCallItem, ThreadItem, UserInput } from "../../shared/protocol";
+import type { DynamicToolCallContentItem, DynamicToolCallItem, ThreadItem, TurnError, UserInput } from "../../shared/protocol";
 
 type JsonObject = Record<string, unknown>;
 
@@ -19,6 +19,7 @@ interface TurnBuilder {
   tools: Map<string, DynamicToolCallItem>;
   hasAssistant: boolean;
   stopReason: string | null;
+  error: TurnError | null;
 }
 
 function isRecord(value: unknown): value is JsonObject {
@@ -107,12 +108,15 @@ function startTurn(entry: Entry): TurnBuilder {
     tools: new Map(),
     hasAssistant: false,
     stopReason: null,
+    error: null,
   };
 }
 
 function addAssistant(turn: TurnBuilder, entry: Entry, message: JsonObject): void {
   turn.hasAssistant = true;
   turn.stopReason = typeof message["stopReason"] === "string" ? message["stopReason"] : null;
+  turn.error =
+    turn.stopReason === "error" && typeof message["errorMessage"] === "string" ? { message: message["errorMessage"] } : null;
   blocks(message["content"]).forEach((block, index) => {
     const id = `${entry.id}:${index}`;
     if (block["type"] === "text" && typeof block["text"] === "string") {
@@ -162,6 +166,7 @@ function finishTurn(turn: TurnBuilder, isFinal: boolean): HistoryTurn {
   return {
     id: turn.id,
     status,
+    error: turn.error,
     items: turn.items,
     startedAt: turn.startedAt,
     completedAt: status === "inProgress" ? null : turn.lastTimestamp,

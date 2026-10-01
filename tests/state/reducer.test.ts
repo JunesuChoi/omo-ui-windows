@@ -116,7 +116,7 @@ describe("reduce", () => {
       {
         type: "history/loaded",
         threadId,
-        turns: [{ id: "shared", status: "completed", items: [], startedAt: 10, completedAt: 20 }],
+        turns: [{ id: "shared", status: "failed", error: { message: "402: Insufficient Balance" }, items: [], startedAt: 10, completedAt: 20 }],
       },
     ]);
     const conversation = state.conversations[threadId];
@@ -125,6 +125,7 @@ describe("reduce", () => {
       ["live-1", "live"],
     ]);
     expect(conversation?.historyState).toBe("loaded");
+    expect(conversation?.turns[0]?.error).toEqual({ message: "402: Insufficient Balance" });
   });
 
   it("removes the thread, its conversation and its requests on thread/deleted", () => {

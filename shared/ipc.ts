@@ -10,6 +10,7 @@ import type {
   RpcNotification,
   RpcServerRequest,
   ThreadItem,
+  TurnError,
   TurnStatus,
 } from "./protocol";
 
@@ -76,6 +77,7 @@ export interface Preferences {
 export interface HistoryTurn {
   id: string;
   status: TurnStatus;
+  error: TurnError | null;
   items: ThreadItem[];
   /** Unix milliseconds. */
   startedAt: number | null;
