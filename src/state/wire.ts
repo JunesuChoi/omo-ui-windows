@@ -2,7 +2,10 @@ import { isKnownItem } from "../../shared/protocol";
 import type {
   CommandApprovalParams,
   FileChangeApprovalParams,
+  Model,
   RequestId,
+  SkillErrorInfo,
+  SkillMetadata,
   RpcNotification,
   RpcServerRequest,
   ServerNotificationMap,
@@ -53,7 +56,8 @@ function isTurnError(value: unknown): value is TurnError {
   return isObject(value) && isString(value["message"]);
 }
 
-function isThread(value: unknown): value is Thread {
+/** Validates a thread from a notification or a request result; the reducer reads these fields without further checks. */
+export function isThread(value: unknown): value is Thread {
   return (
     isObject(value) &&
     isString(value["id"]) &&
@@ -69,13 +73,46 @@ function isTurn(value: unknown): value is Turn {
   return isObject(value) && isString(value["id"]) && isString(status) && TURN_STATUSES.has(status) && Array.isArray(value["items"]);
 }
 
-const ITEM_FIELD_CHECKS: Partial<Record<ThreadItem["type"], (value: JsonObject) => boolean>> = {
-  userMessage: (value) => Array.isArray(value["content"]),
+function isOptionalString(value: unknown): boolean {
+  return value === undefined || value === null || isString(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(isString);
+}
+
+function isArrayOf(value: unknown, check: (entry: unknown) => boolean): boolean {
+  return Array.isArray(value) && value.every(check);
+}
+
+/** A typed part; text parts carry their text because the preview and the pending-message match read it. */
+function isTypedPart(textType: string): (value: unknown) => boolean {
+  return (value) => isObject(value) && isString(value["type"]) && (value["type"] !== textType || isString(value["text"]));
+}
+
+function isFileUpdateChange(value: unknown): boolean {
+  return isObject(value) && isString(value["path"]) && (value["diff"] === undefined || isString(value["diff"]));
+}
+
+/** The fields of each item type that the reducer edits or the conversation view reads without a fallback. */
+const ITEM_FIELD_CHECKS: Record<ThreadItem["type"], (value: JsonObject) => boolean> = {
+  userMessage: (value) => isArrayOf(value["content"], isTypedPart("text")) && isOptionalString(value["clientId"]),
   agentMessage: (value) => isString(value["text"]),
-  reasoning: (value) => Array.isArray(value["summary"]) && Array.isArray(value["content"]),
+  reasoning: (value) => isStringArray(value["summary"]) && isStringArray(value["content"]),
+  plan: (value) => isString(value["text"]),
+  commandExecution: (value) => isString(value["command"]) && isOptionalString(value["aggregatedOutput"]),
+  fileChange: (value) => isArrayOf(value["changes"], isFileUpdateChange),
+  mcpToolCall: (value) =>
+    isString(value["server"]) && isString(value["tool"]) &&
+    (value["error"] === undefined || value["error"] === null || isTurnError(value["error"])),
+  dynamicToolCall: (value) =>
+    isString(value["tool"]) &&
+    (value["contentItems"] === undefined || value["contentItems"] === null || isArrayOf(value["contentItems"], isTypedPart("inputText"))),
+  webSearch: (value) => isString(value["query"]),
+  contextCompaction: () => true,
 };
 
-/** Parses one wire item; unknown item types and items missing fields the reducer edits return null. */
+/** Parses one wire item; unknown item types and items whose consumed fields are missing or malformed return null. */
 export function parseItem(value: unknown): ThreadItem | null {
   if (!isObject(value)) return null;
   const type = value["type"];
@@ -83,8 +120,37 @@ export function parseItem(value: unknown): ThreadItem | null {
   if (!isString(type) || !isString(id)) return null;
   const item = { ...value, type, id };
   if (!isKnownItem(item)) return null;
-  const check = ITEM_FIELD_CHECKS[item.type];
-  return check === undefined || check(value) ? item : null;
+  return ITEM_FIELD_CHECKS[item.type](value) ? item : null;
+}
+
+/** Validates a skills/list skill; the skill menu reads these fields without further checks. */
+export function isSkill(value: unknown): value is SkillMetadata {
+  return (
+    isObject(value) &&
+    isString(value["name"]) &&
+    isString(value["description"]) &&
+    isString(value["scope"]) &&
+    typeof value["enabled"] === "boolean" &&
+    (value["path"] === undefined || isString(value["path"])) &&
+    (value["shortDescription"] === undefined || isString(value["shortDescription"])) &&
+    (value["interface"] === undefined || isObject(value["interface"]))
+  );
+}
+
+export function isSkillError(value: unknown): value is SkillErrorInfo {
+  return isObject(value) && isString(value["path"]) && isString(value["message"]);
+}
+
+/** Validates a model/list entry; the model picker reads these fields without further checks. */
+export function isModel(value: unknown): value is Model {
+  return (
+    isObject(value) &&
+    isString(value["id"]) &&
+    isString(value["displayName"]) &&
+    isString(value["description"]) &&
+    isOptionalString(value["defaultReasoningEffort"]) &&
+    isArrayOf(value["supportedReasoningEfforts"], (entry) => isObject(entry) && isString(entry["reasoningEffort"]))
+  );
 }
 
 interface DeltaFields {

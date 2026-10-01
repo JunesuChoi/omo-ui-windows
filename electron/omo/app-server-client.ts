@@ -24,6 +24,20 @@ export type SpawnImpl = (
 
 export type InitializeResult = ClientResult<"initialize">;
 
+const isOptionalString = (value: unknown): boolean => value === undefined || typeof value === "string";
+
+/** Validates the initialize result at the process boundary; the bridge status and history:load read these fields. */
+export function isInitializeResult(value: unknown): value is InitializeResult {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const fields: Record<string, unknown> = { ...value };
+  return (
+    typeof fields["userAgent"] === "string" &&
+    isOptionalString(fields["codexHome"]) &&
+    isOptionalString(fields["platformFamily"]) &&
+    isOptionalString(fields["platformOs"])
+  );
+}
+
 export interface AppServerClientOptions {
   command: string;
   args: readonly string[];
@@ -74,15 +88,16 @@ export class AppServerClient {
     const child = this.spawnChild();
     const startTimeoutMs = this.options.startTimeoutMs ?? 20_000;
     try {
-      // The server owns the result schema; initialize is bounded by startTimeoutMs, not requestTimeoutMs.
-      const result = (await this.send(
+      // initialize is bounded by startTimeoutMs, not requestTimeoutMs.
+      const result = await this.send(
         "initialize",
         {
           clientInfo: { name: "omo-ui", title: "OmO UI", version: this.options.clientVersion },
           capabilities: { experimentalApi: true },
         },
         startTimeoutMs,
-      )) as InitializeResult;
+      );
+      if (!isInitializeResult(result)) throw new Error("omo app-server returned a malformed initialize result");
       this.write({ method: "initialized" });
       this.initResult = result;
       return result;
@@ -105,7 +120,8 @@ export class AppServerClient {
   }
 
   request<M extends ClientMethod>(method: M, params: ClientParams<M>): Promise<ClientResult<M>> {
-    // The server owns the result schema for each method; results are trusted as ClientRequestMap declares.
+    // Results are relayed to the renderer as ClientRequestMap declares; src/state validates the fields it consumes
+    // (src/state/wire.ts) before they reach the store.
     return this.send(method, params, this.options.requestTimeoutMs ?? 60_000).then((result) => result as ClientResult<M>);
   }
 

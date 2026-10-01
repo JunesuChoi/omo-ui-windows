@@ -22,6 +22,10 @@ lines.on("line", (line) => {
   }
   switch (frame.method) {
     case "initialize":
+      if (process.env.STUB_BAD_INIT === "1") {
+        send({ id: frame.id, result: { userAgent: 42 } });
+        return;
+      }
       setTimeout(() => send({ id: frame.id, result: { userAgent: "fake/1.0", codexHome: "/tmp/fake-codex", platformFamily: "unix", platformOs: "macos" } }), initDelayMs);
       return;
     case "initialized":

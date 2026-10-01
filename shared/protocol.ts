@@ -301,7 +301,8 @@ export interface ClientRequestMap {
       clientInfo: { name: string; title: string; version: string };
       capabilities: { experimentalApi: boolean };
     };
-    result: { userAgent: string; codexHome: string; platformFamily: string; platformOs: string };
+    /** codexHome and the platform fields are optional for older servers; isInitializeResult checks the types at runtime. */
+    result: { userAgent: string; codexHome?: string; platformFamily?: string; platformOs?: string };
   };
   "model/list": {
     params: { includeHidden?: boolean; cursor?: number | null; limit?: number | null };

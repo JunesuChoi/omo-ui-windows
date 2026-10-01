@@ -2,7 +2,7 @@ import type { BridgeStatus, OmoBridgeApi } from "../../shared/ipc";
 import type { ApprovalDecision, ReasoningEffort, RequestId, RpcNotification, ThreadSessionResult, UserInput } from "../../shared/protocol";
 import type { AppStore } from "./store";
 import type { NoticeCode, SessionModel } from "./types";
-import { parseNotification } from "./wire";
+import { isModel, isSkill, isSkillError, isThread, parseNotification } from "./wire";
 import { selectSkillCatalog } from "./selectors";
 import { object, parseGoal } from "./live-wire";
 
@@ -102,7 +102,8 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
   const refreshModels = (): Promise<void> =>
     guarded(async () => {
       const result = await bridge.request("model/list", { includeHidden: false });
-      store.dispatch({ type: "models/loaded", models: result.data });
+      if (!Array.isArray(result.data)) throw new Error("omo returned a malformed model/list result");
+      store.dispatch({ type: "models/loaded", models: result.data.filter(isModel) });
     });
 
   const refreshThreads = (append = false): Promise<void> =>
@@ -113,7 +114,9 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
         "thread/list",
         append ? { limit: THREAD_PAGE_SIZE, cursor } : { limit: THREAD_PAGE_SIZE },
       );
-      store.dispatch({ type: "threads/listed", threads: result.data, nextCursor: result.nextCursor, append });
+      if (!Array.isArray(result.data)) throw new Error("omo returned a malformed thread/list result");
+      const nextCursor = typeof result.nextCursor === "string" ? result.nextCursor : null;
+      store.dispatch({ type: "threads/listed", threads: result.data.filter(isThread), nextCursor, append });
     });
 
   const loadSkills = async (cwd: string, { force = false }: { force?: boolean } = {}): Promise<void> => {
@@ -122,9 +125,11 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
     const generation = selectSkillCatalog(store.getState(), cwd).generation;
     try {
       const result = await bridge.request("skills/list", { cwds: [cwd], ...(force ? { forceReload: true } : {}) });
-      const entry = result.data.find((candidate) => candidate.cwd === cwd);
+      if (!Array.isArray(result.data)) throw new Error("omo returned a malformed skills/list result");
+      const entry = result.data.find((candidate) => object(candidate) && candidate.cwd === cwd);
       if (entry === undefined) throw new Error(`skills/list returned no entry for ${cwd}`);
-      store.dispatch({ type: "skills/loaded", cwd, generation, skills: entry.skills, errors: entry.errors });
+      if (!Array.isArray(entry.skills) || !Array.isArray(entry.errors)) throw new Error(`skills/list returned a malformed entry for ${cwd}`);
+      store.dispatch({ type: "skills/loaded", cwd, generation, skills: entry.skills.filter(isSkill), errors: entry.errors.filter(isSkillError) });
     } catch (error) {
       store.dispatch({ type: "skills/failed", cwd, generation, message: errorMessage(error) });
     }
@@ -263,6 +268,7 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
       const { modelId } = store.getState().composer;
       try {
         const result = await bridge.request("thread/start", modelId === null ? { cwd } : { cwd, model: modelId });
+        if (!isThread(result.thread)) throw new Error("omo returned a malformed thread/start result");
         const threadId = result.thread.id;
         store.dispatch({ type: "thread/opened", thread: result.thread, resumed: true, session: sessionOf(result) });
         store.dispatch({ type: "thread/activated", threadId });
@@ -300,6 +306,7 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
       try {
         if (conversation?.resumed !== true) {
           const resumed = await bridge.request("thread/resume", { threadId });
+          if (!isThread(resumed.thread)) throw new Error("omo returned a malformed thread/resume result");
           store.dispatch({ type: "thread/opened", thread: resumed.thread, resumed: true, session: sessionOf(resumed) });
           await readGoal(threadId);
           await ensureSkills(resumed.thread.cwd);

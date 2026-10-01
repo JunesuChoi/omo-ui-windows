@@ -117,6 +117,14 @@ describe("AppServerClient", () => {
     expect(error).toMatchObject({ message: "omo app-server did not initialize within 100 ms" });
   });
 
+  it("rejects start() with AppServerStartError when the initialize result is malformed", async () => {
+    const client = stubClient({ STUB_BAD_INIT: "1" });
+    const error = await client.start().then(() => null, (reason: unknown) => reason);
+    expect(error).toBeInstanceOf(AppServerStartError);
+    expect(error).toMatchObject({ message: "omo app-server initialize failed: omo app-server returned a malformed initialize result" });
+    expect(client.initializeResult).toBeNull();
+  });
+
   it("rejects start() when the child exits before initializing", async () => {
     const client = new AppServerClient({
       command: CRASH,

@@ -61,16 +61,19 @@ class FakeBridge implements OmoBridgeApi {
       name: "ulw-loop", description: "Loop", path: "/skills/ulw-loop/SKILL.md", scope: "system", enabled: true,
     }], errors: [] })),
   });
+  threadList: () => unknown = () => ({ data: [makeThread(THREAD_ID, { path: SESSION_PATH })], nextCursor: null });
+  started: (cwd: string) => unknown = (cwd) => ({
+    thread: makeThread(THREAD_ID, { cwd }), model: "claude-fable-5", modelProvider: "anthropic", cwd, reasoningEffort: null,
+  });
   status = bridgeStatus("starting");
   preferences: Preferences = { theme: "system", locale: "system", lastWorkspace: null, recentWorkspaces: [], modelId: null };
   private readonly statusListeners = new Set<(status: BridgeStatus) => void>();
   private readonly handlers: Handlers = {
     "thread/goal/get": () => this.goal(),
     "model/list": () => ({ data: [model], nextCursor: null }),
-    "thread/list": () => ({ data: [makeThread(THREAD_ID, { path: SESSION_PATH })], nextCursor: null }),
-    "thread/start": ({ cwd }) => ({
-      thread: makeThread(THREAD_ID, { cwd }), model: "claude-fable-5", modelProvider: "anthropic", cwd, reasoningEffort: null,
-    }),
+    // Results cross a process boundary; the overrides let tests return malformed payloads.
+    "thread/list": () => this.threadList() as ClientResult<"thread/list">,
+    "thread/start": ({ cwd }) => this.started(cwd) as ClientResult<"thread/start">,
     "skills/list": ({ cwds }) => this.skills(cwds ?? []),
     "thread/resume": ({ threadId }) => ({
       thread: makeThread(threadId, { path: SESSION_PATH }),
@@ -195,6 +198,25 @@ async function listThread(setupResult: ReturnType<typeof setup>): Promise<void> 
 }
 
 describe("createActions", () => {
+  it("drops malformed thread/list entries and keeps the valid ones", async () => {
+    const context = setup();
+    context.bridge.threadList = () => ({ data: [null, { id: 7 }, makeThread(THREAD_ID, { path: SESSION_PATH })], nextCursor: 5 });
+    await context.actions.refreshThreads();
+    expect(Object.keys(context.store.getState().threads)).toEqual([THREAD_ID]);
+    expect(context.store.getState().threadsCursor).toBeNull();
+  });
+  it("reports a malformed thread/start result instead of storing the thread", async () => {
+    const context = setup();
+    context.bridge.started = (cwd) => ({ thread: { id: THREAD_ID }, model: "m", modelProvider: "p", cwd, reasoningEffort: null });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      expect(await context.actions.newThread("/tmp/work/project")).toBeNull();
+    } finally {
+      warn.mockRestore();
+    }
+    expect(context.store.getState().threads[THREAD_ID]).toBeUndefined();
+    expect(context.store.getState().notices.at(-1)?.message).toContain("malformed thread/start result");
+  });
   const activeGoal: ClientResult<"thread/goal/get">["goal"] = {
     threadId: THREAD_ID, objective: "ship", status: "active", tokenBudget: null, tokensUsed: 1, timeUsedSeconds: 2,
     createdAt: 1, updatedAt: 2,
