@@ -51,7 +51,7 @@ async function isInstalled(exec: ExecFn, bundleId: string): Promise<boolean> {
     const out = await exec(MDFIND, [`kMDItemCFBundleIdentifier == '${bundleId}'`]);
     return out.trim() !== "";
   } catch (error) {
-    void error;
+    console.warn(`mdfind could not look up ${bundleId}; treating it as not installed`, error);
     return false;
   }
 }
