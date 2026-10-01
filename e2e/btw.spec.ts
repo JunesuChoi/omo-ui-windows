@@ -211,7 +211,17 @@ test("/btw while a main turn runs neither steers nor interrupts it", async () =>
   await send(page, "SCENARIO:slow");
   const running = mainTurns(page).last();
   await expect(running.locator(`[data-testid="${TESTID.assistantMessage}"]`)).toContainText("tick 2");
-  await send(page, "/btw are we there yet?");
+  const input = byTestId(page, TESTID.composerInput);
+  const sendButton = byTestId(page, TESTID.composerSend);
+  await input.fill("keep going");
+  await expect(byTestId(page, TESTID.steeringHint)).toBeVisible();
+  const steerLabel = (await sendButton.getAttribute("aria-label")) ?? "";
+  await input.fill("/btw are we there yet?");
+  await expect(byTestId(page, TESTID.steeringHint)).toHaveCount(0);
+  await expect(sendButton).not.toHaveAttribute("aria-label", steerLabel);
+  await shot(page, "C002-btw-draft-running");
+  await input.press("Enter");
+  await expect(input).toHaveValue("");
   await expect(sideAnswer(page)).toContainText('Side answer to "are we there yet?"');
   await expect(running).toHaveAttribute("data-status", "inProgress");
   expect(methodCount(readFakeLog(), "turn/steer")).toBe(0);

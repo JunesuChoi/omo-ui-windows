@@ -54,6 +54,7 @@ export const TESTID = {
   composerInput: "composer-input",
   composerSend: "composer-send",
   composerStop: "composer-stop",
+  steeringHint: "steering-hint",
   keywordHighlight: "keyword-highlight",
   keywordHint: "keyword-hint",
   fullAccessChip: "full-access-chip",

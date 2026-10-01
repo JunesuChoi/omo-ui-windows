@@ -293,7 +293,9 @@ export function Composer() {
       : turnActive
         ? t("composer.placeholder.running")
         : t("composer.placeholder.idle");
-  const sendLabel = turnActive ? t("composer.steer") : t("composer.send");
+  // A /btw or /side draft goes to the side panel, so it never steers the running turn.
+  const steers = turnActive && parseBtwCommand(text) === null;
+  const sendLabel = steers ? t("composer.steer") : t("composer.send");
 
   return (
     <div className={css.root}>
@@ -398,7 +400,11 @@ export function Composer() {
             )}
           </div>
           <div className={css.trailing}>
-            {turnActive && !blank && <span className={css.hint}>{t("composer.steering")}</span>}
+            {steers && !blank && (
+              <span className={css.hint} data-testid={TESTID.steeringHint}>
+                {t("composer.steering")}
+              </span>
+            )}
             <ModelPicker disabled={!connected} />
             {turnActive && (
               <Tooltip label={t("composer.stop")} side="top" delayMs={500}>
