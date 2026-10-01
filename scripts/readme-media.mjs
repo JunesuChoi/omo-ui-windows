@@ -35,27 +35,34 @@ function parseOnly(argv) {
   return new Set(value.split(","));
 }
 
-/** Launches the built app with fresh user data; `omo: null` leaves omo unresolvable for the onboarding screen. */
+/**
+ * Launches the built app with fresh user data and an environment built from scratch: a temporary HOME, zsh and the
+ * system PATH, so neither the app nor the login shell it runs to capture omo's environment reads the user's home,
+ * shell startup files or variables. `omo: null` leaves omo unresolvable for the onboarding screen. A setup failure
+ * after the launch closes the app and rethrows the setup error.
+ */
 async function launch({ theme, locale = "en", size = WIDE, omo = FAKE_OMO, video = null }) {
   const run = path.join(temp, `run-${++launches}`);
   const userData = path.join(run, "user-data");
-  mkdirSync(userData, { recursive: true });
+  const home = path.join(run, "home");
+  for (const dir of [userData, home]) mkdirSync(dir, { recursive: true });
   writeFileSync(path.join(userData, "preferences.json"), `${JSON.stringify({ theme, locale })}\n`);
-  const env = { ...process.env };
-  for (const key of ["ELECTRON_RUN_AS_NODE", "OMO_UI_OMO_BIN", "FAKE_OMO_LOG"]) delete env[key];
-  Object.assign(env, {
+  // node's directory is on PATH only for the fake omo, whose shebang is `#!/usr/bin/env node`.
+  const searchPath = [...(omo === null ? [] : [path.dirname(process.execPath)]), "/usr/bin", "/bin", "/usr/sbin", "/sbin"];
+  const env = {
+    HOME: home,
+    SHELL: "/bin/zsh",
+    TMPDIR: tmpdir(),
+    PATH: searchPath.join(":"),
     OMO_UI_USER_DATA: userData,
     OMO_UI_QA_PICK_DIR: workspace(WORKSPACES[0]),
     FAKE_OMO_HOME: path.join(run, "fake-home"),
     FAKE_OMO_DEMO: demoFile,
     FAKE_OMO_SEED_THREADS: seedFile,
     FAKE_OMO_SKILLS: JSON.stringify(skillCatalog(temp)),
-  });
-  if (omo === null) {
-    const home = path.join(run, "home");
-    mkdirSync(home, { recursive: true });
-    Object.assign(env, { HOME: home, PATH: "/usr/bin:/bin:/usr/sbin:/sbin" });
-  } else env.OMO_UI_OMO_BIN = omo;
+  };
+  for (const key of ["USER", "LOGNAME"]) if (process.env[key] !== undefined) env[key] = process.env[key];
+  if (omo !== null) env.OMO_UI_OMO_BIN = omo;
   const app = await electron.launch({
     args: ["."],
     cwd: ROOT,
@@ -63,27 +70,32 @@ async function launch({ theme, locale = "en", size = WIDE, omo = FAKE_OMO, video
     timeout: TIMEOUT_MS,
     ...(video === null ? {} : { recordVideo: { dir: video, size } }),
   });
-  const page = await app.firstWindow({ timeout: TIMEOUT_MS });
-  const startedAt = Date.now();
-  await app.evaluate(({ BrowserWindow }, wanted) => BrowserWindow.getAllWindows()[0]?.setContentSize(wanted.width, wanted.height), size);
-  await page.waitForFunction((width) => window.innerWidth === width, size.width, { timeout: TIMEOUT_MS });
-  const ready = omo === null ? tid("onboarding") : `html[data-bridge-state="connected"] ${tid("app-frame")}`;
-  await page.locator(ready).first().waitFor({ state: "visible", timeout: TIMEOUT_MS });
-  await page.waitForFunction((dark) => document.body.hasAttribute("data-ds-dark-theme") === dark, theme === "dark");
-  await page.evaluate(async () => {
-    await document.fonts.ready;
-  });
-  // CDP captures leave out the native vibrancy layer behind the transparent window; paint the theme's opaque fill.
-  const fill = await page.evaluate(() => {
-    const probe = document.createElement("div");
-    probe.style.backgroundColor = "var(--dsw-specific-sidebar-fill)";
-    document.body.append(probe);
-    const value = getComputedStyle(probe).backgroundColor;
-    probe.remove();
-    return value;
-  });
-  await page.addStyleTag({ content: `html { background: ${fill} !important; }` });
-  return { app, page, startedAt };
+  try {
+    const page = await app.firstWindow({ timeout: TIMEOUT_MS });
+    const startedAt = Date.now();
+    await app.evaluate(({ BrowserWindow }, wanted) => BrowserWindow.getAllWindows()[0]?.setContentSize(wanted.width, wanted.height), size);
+    await page.waitForFunction((width) => window.innerWidth === width, size.width, { timeout: TIMEOUT_MS });
+    const ready = omo === null ? tid("onboarding") : `html[data-bridge-state="connected"] ${tid("app-frame")}`;
+    await page.locator(ready).first().waitFor({ state: "visible", timeout: TIMEOUT_MS });
+    await page.waitForFunction((dark) => document.body.hasAttribute("data-ds-dark-theme") === dark, theme === "dark");
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+    });
+    // CDP captures leave out the native vibrancy layer behind the transparent window; paint the theme's opaque fill.
+    const fill = await page.evaluate(() => {
+      const probe = document.createElement("div");
+      probe.style.backgroundColor = "var(--dsw-specific-sidebar-fill)";
+      document.body.append(probe);
+      const value = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return value;
+    });
+    await page.addStyleTag({ content: `html { background: ${fill} !important; }` });
+    return { app, page, startedAt };
+  } catch (error) {
+    await app.close().catch((closeError) => console.error(`closing the app after its launch setup failed: ${closeError}`));
+    throw error;
+  }
 }
 
 async function settle(page) {
