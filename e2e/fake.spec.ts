@@ -142,8 +142,6 @@ test("dark primary buttons keep readable text, and the send arrow stays white in
   await question.locator(`[data-testid="${TESTID.questionOption}"][data-label="B"]`).click();
   const submit = await colorsOf(byTestId(page, TESTID.questionSubmit));
   expect(contrastRatio(submit.color, submit.background)).toBeGreaterThanOrEqual(4.5);
-  const checkmark = await tokenColors(page, "--dsw-alias-label-primary-foreground", "--dsw-alias-label-primary");
-  expect(contrastRatio(checkmark.color, checkmark.background)).toBeGreaterThanOrEqual(3);
   await shot(page, "G010-dark-question");
   await byTestId(page, TESTID.questionSubmit).click();
   await expect(lastTurn(page)).toHaveAttribute("data-status", "completed");
@@ -153,4 +151,29 @@ test("dark primary buttons keep readable text, and the send arrow stays white in
   const lightPrimary = await tokenColors(page, "--dsw-alias-label-primary-foreground", "--dsw-alias-button-primary-fill");
   expect(lightPrimary.color).toBe(white);
   expect(contrastRatio(lightPrimary.color, lightPrimary.background)).toBeGreaterThanOrEqual(4.5);
+});
+
+test("a checked multi-select option keeps a readable check mark in the dark theme", async () => {
+  const { page } = current();
+  await setTheme(page, "dark");
+  await newSession(page);
+  await send(page, "SCENARIO:multi-question");
+  const question = byTestId(page, TESTID.questionCard);
+  await expect(question).toBeVisible();
+  const option = question.locator(`[data-testid="${TESTID.questionOption}"][data-label="E2E"]`);
+  await option.click();
+  await expect(option).toHaveAttribute("aria-checked", "true");
+  // The checkbox fill fades in over a CSS transition; measure the settled colors, not a frame of the fade.
+  await option.evaluate((button) => Promise.all(button.getAnimations({ subtree: true }).map((animation) => animation.finished)));
+  const mark = await option.evaluate((button) => {
+    const stroke = button.querySelector("svg path");
+    const box = stroke?.closest("svg")?.parentElement;
+    if (!stroke || !box) throw new Error("the checked option renders no check mark");
+    return { color: getComputedStyle(stroke).stroke, background: getComputedStyle(box, "::before").backgroundColor };
+  });
+  expect(mark.background).not.toBe("rgba(0, 0, 0, 0)");
+  expect(contrastRatio(mark.color, mark.background)).toBeGreaterThanOrEqual(3);
+  await shot(page, "G010-dark-multi-check");
+  await byTestId(page, TESTID.questionSubmit).click();
+  await expect(lastTurn(page)).toHaveAttribute("data-status", "completed");
 });

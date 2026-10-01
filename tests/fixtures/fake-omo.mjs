@@ -434,6 +434,35 @@ async function runFull(record, turn) {
   closeAgentMessage(record, turn, item, "stop");
 }
 
+/** Asks one multi-select question and confirms the first chosen option. */
+async function runMultiQuestion(record, turn) {
+  const response = await askClient(turn, `user-input-${turn.itemSeq}`, "item/tool/requestUserInput", {
+    threadId: turn.threadId,
+    turnId: turn.wire.id,
+    itemId: `question-${turn.itemSeq}`,
+    questions: [
+      {
+        id: "q1",
+        header: "Checks",
+        question: "Which checks should run?",
+        isOther: false,
+        isSecret: false,
+        options: [
+          { label: "Unit", description: "vitest" },
+          { label: "E2E", description: "Playwright" },
+        ],
+        multiSelect: true,
+      },
+    ],
+    waitForAnswer: true,
+    timeoutMs: 600000,
+    autoResolutionMs: null,
+  });
+  const item = openAgentMessage(turn);
+  appendAgentDelta(turn, item, `Running **${firstAnswer(response)}**.`);
+  closeAgentMessage(record, turn, item, "stop");
+}
+
 const SIDE_MARKER = "[OmO UI side chat background]";
 
 /** Answers an OmO UI side chat's first message, naming its question and how much main context it carried. */
@@ -600,6 +629,7 @@ function runScenario(record, turn, text) {
   }
   if (text.includes("SCENARIO:full")) return runFull(record, turn);
   if (text.includes("SCENARIO:slow")) return runSlow(record, turn);
+  if (text.includes("SCENARIO:multi-question")) return runMultiQuestion(record, turn);
   return runEcho(record, turn, text);
 }
 
