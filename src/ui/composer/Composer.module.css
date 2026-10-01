@@ -1,0 +1,205 @@
+/* Ported from DSH ui-conversation skeleton/InputBar.module.css (textarea variant). */
+
+.root {
+  --dsh-composer-card-max-width: 760px;
+  --dsh-composer-side-clearance: 20px;
+  --dsh-composer-line-height: 24px;
+  --dsh-composer-max-lines: 12;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 var(--dsh-composer-side-clearance) 20px;
+}
+
+.card {
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: var(--dsh-composer-card-max-width);
+  padding-top: 8px;
+  border: 0;
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-panel);
+  background: var(--dsw-specific-input-major);
+  box-shadow: var(--dsw-elevation-soft);
+  font-size: 14px;
+  line-height: var(--dsh-composer-line-height);
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.card:focus-within {
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l3);
+}
+
+.cardDisabled {
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
+}
+
+.scroll {
+  margin-right: 4px;
+}
+
+.scroll::-webkit-scrollbar-track {
+  margin-top: 8px;
+}
+
+.input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 36px;
+  max-height: calc(var(--dsh-composer-max-lines) * var(--dsh-composer-line-height) + 4px);
+  margin: 0;
+  padding: 4px 8px 0 14px;
+  border: none;
+  outline: none;
+  resize: none;
+  overflow-y: auto;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--dsw-font-family);
+  font-size: inherit;
+  line-height: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  caret-color: var(--dsw-alias-state-business-primary);
+}
+
+.input::placeholder {
+  color: var(--dsw-alias-label-caption);
+}
+
+.input:disabled {
+  color: var(--dsw-alias-label-tertiary);
+  cursor: not-allowed;
+}
+
+.input:disabled::placeholder {
+  color: var(--dsw-alias-label-dimmed);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 8px 6px;
+  min-width: 0;
+  container-type: inline-size;
+}
+
+.tools,
+.trailing {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 12px;
+}
+
+.tools {
+  padding-left: 4px;
+}
+
+.trailing {
+  flex: none;
+  margin-left: auto;
+}
+
+@container (max-width: 560px) {
+  .tools,
+  .trailing {
+    gap: 8px;
+  }
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: min(280px, 60cqw);
+  height: 28px;
+  padding: 0 10px 0 8px;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-specific-selector);
+  color: var(--dsw-alias-label-secondary);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.chip:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+}
+
+.chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.chipIcon {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.chipLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hint {
+  flex: none;
+  padding: 0 8px;
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 22px;
+  white-space: nowrap;
+}
+
+.primary {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  corner-shape: round;
+  background: var(--dsw-alias-button-info-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+  cursor: pointer;
+  transition: background-color 100ms ease;
+  transform: translateY(-2px);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--dsw-alias-button-info-hover);
+}
+
+.primary:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.stop {
+  background: var(--dsw-specific-selector);
+  color: var(--dsw-alias-label-primary);
+}
+
+.stop:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+}
