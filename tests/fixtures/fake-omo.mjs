@@ -430,6 +430,7 @@ async function runFull(record, turn) {
 }
 
 function runScenario(record, turn, text) {
+  if (text.includes("SCENARIO:omo-live")) return runLive(record, turn);
   if (text === "SCENARIO:skills-history") {
     const item = openAgentMessage(turn);
     appendAgentDelta(turn, item, "Built the thing.");
@@ -452,6 +453,74 @@ function runScenario(record, turn, text) {
   if (text.includes("SCENARIO:full")) return runFull(record, turn);
   if (text.includes("SCENARIO:slow")) return runSlow(record, turn);
   return runEcho(record, turn, text);
+}
+
+function emitLiveStage(record, turn, stage) {
+  const threadId = record.thread.id;
+  const at = new Date().toISOString();
+  const states = stage === 1 ? ["running", "blocked", "blocked"] : stage === 2 ? ["completed", "running", "scheduled"] : ["completed", "failed", "skipped"];
+  const nodes = ["A", "B", "C"].map((id, index) => ({
+    id, label: `Lane ${id}`, prompt: `Execute ${id}`, depends_on: id === "A" ? [] : ["A"],
+    state: states[index], attempt: 1, created_at: at,
+    ...(states[index] === "running" || states[index] === "completed" || states[index] === "failed" ? { task_id: `task-${id}`, started_at: at } : {}),
+    ...(states[index] === "completed" || states[index] === "failed" ? { completed_at: at } : {}),
+    ...(states[index] === "failed" ? { last_error: { code: "provider_error", message: "402: Insufficient Balance" } } : {}),
+  }));
+  const counts = { total: 3, pending: 0, blocked: 0, scheduled: 0, running: 0, completed: 0, failed: 0, cancelled: 0, skipped: 0 };
+  for (const state of states) counts[state] += 1;
+  const extension = (name, data) => notify("extension_event", { type: "extension_event", threadId, name, data });
+  extension("omo.dag.updated", { parent_session_id: threadId, runs: [{
+    run_id: "mass-ulw-display", run_key: "display", name: "mass-ulw display", status: stage === 3 ? "failed" : "running",
+    created_at: at, updated_at: at, ...(stage === 3 ? { completed_at: at } : {}), counts, nodes,
+    edges: [{ from: "A", to: "B" }, { from: "A", to: "C" }], waves: [{ index: 0, node_ids: ["A"] }, { index: 1, node_ids: ["B", "C"] }],
+  }] });
+  const task = (id, status) => ({
+    task_id: `task-${id}`, name: `Lane ${id}`, task_summary: `Execute ${id}`, status,
+    execution_mode: "in-process", model: "fake/alpha", residency_state: status === "running" ? "resident" : "disposed",
+    depth: 1, created_at: at, updated_at: at,
+    ...(status === "running" ? { live_progress: { activity: "working", started_at: Date.now(), current_tool: "read", turns: 1, tool_calls: 1 } } : {}),
+    ...(status === "completed" ? { final_response: "A completed", run_stats: { runtime_ms: 10, turns: 1, tool_calls: 1 } } : {}),
+    ...(status === "error" ? { error_message: "402: Insufficient Balance", failure_kind: "provider_error" } : {}),
+  });
+  extension("omo.task.updated", { parent_session_id: threadId, tasks: stage === 1 ? [task("A", "running")] : [task("A", "completed"), task("B", stage === 2 ? "running" : "error")] });
+  if (stage === 1) {
+    record.goal = { threadId, objective: "Ship the OmO UI app", status: "active", tokenBudget: null, tokensUsed: 0, timeUsedSeconds: 0, createdAt: nowSec(), updatedAt: nowSec() };
+    notify("thread/goal/updated", { threadId, turnId: null, goal: record.goal });
+  }
+  if (stage === 2) extension("omo.dag.activity", { schemaVersion: 1, runId: "mass-ulw-display", nodeId: "B", taskId: "task-B", at, activity: "implementing", currentTool: "edit", turns: 2, toolCalls: 3 });
+  if (stage === 3) {
+    const tool = { type: "dynamicToolCall", id: nextItemId(turn), namespace: null, tool: "todo", arguments: { op: "init" }, status: "inProgress", contentItems: null, success: null, durationMs: null };
+    startItem(turn, tool);
+    recordEntry(record, assistantEntry([{ type: "toolCall", id: tool.id, name: "todo", arguments: tool.arguments }], "toolUse"));
+    recordEntry(record, { type: "custom", customType: "senpi.todo-state", data: { schema: "v2", phases: [
+      { name: "Implementation", tasks: [{ content: "Implement A", status: "completed" }] },
+      { name: "Verification", tasks: [{ content: "Verify B", status: "abandoned" }, { content: "Report results", status: "pending" }] },
+    ] } });
+    recordEntry(record, toolResultEntry(tool.id, "todo", "Todo saved", false));
+    tool.status = "completed";
+    tool.success = true;
+    tool.contentItems = [{ type: "inputText", text: "Todo saved" }];
+    tool.durationMs = 0;
+    finishItem(turn, tool);
+    record.goal = null;
+    notify("thread/goal/cleared", { threadId });
+  }
+}
+
+function runLive(record, turn) {
+  let stage = 1;
+  emitLiveStage(record, turn, stage);
+  return guard(turn, new Promise((resolve) => {
+    record.advanceLive = () => {
+      if (stage >= 3) return;
+      stage += 1;
+      emitLiveStage(record, turn, stage);
+      if (stage === 3) {
+        record.advanceLive = null;
+        resolve();
+      }
+    };
+  }));
 }
 
 function createTurn(threadId) {
@@ -635,6 +704,16 @@ function handleRequest(id, method, params) {
   if (!initialized) throw new RpcFailure(SERVER_ERROR, "Not initialized");
 
   switch (method) {
+    case "thread/goal/get":
+      respond(id, { goal: getThread(requireString(params, "threadId")).goal ?? null });
+      return;
+    case "extension_request": {
+      const record = getThread(requireString(params, "threadId"));
+      if (params.name !== "fake.advance") throw new RpcFailure(NOT_FOUND, "Extension not found");
+      record.advanceLive?.();
+      respond(id, {});
+      return;
+    }
     case "model/list":
       respond(id, { data: MODELS, nextCursor: null });
       return;

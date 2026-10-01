@@ -15,6 +15,7 @@ import type {
   UserInputParams,
 } from "../../shared/protocol";
 import type { PendingRequest } from "./types";
+import { parseGoal } from "./live-wire";
 
 export type ServerNotification = {
   [M in ServerNotificationMethod]: { method: M; params: ServerNotificationMap[M] };
@@ -100,12 +101,24 @@ function deltaFields(params: JsonObject): DeltaFields | null {
     : null;
 }
 
-/** Narrows a notification to the handled subset; extension_event, unknown methods, and malformed params return null. */
+/** Narrows a notification to the handled subset; unknown methods and malformed params return null. */
 export function parseNotification(notification: RpcNotification): ServerNotification | null {
   const params = notification.params;
   if (!isObject(params)) return null;
   const { threadId, turnId } = params;
   switch (notification.method) {
+    case "extension_event": {
+      const { name, data } = params;
+      return isString(threadId) && isString(name)
+        ? { method: "extension_event", params: { type: "extension_event", threadId, name, data } } : null;
+    }
+    case "thread/goal/updated": {
+      const goal = parseGoal(params["goal"]);
+      return isString(threadId) && (turnId === null || isString(turnId)) && goal !== null && goal.threadId === threadId
+        ? { method: "thread/goal/updated", params: { threadId, turnId, goal } } : null;
+    }
+    case "thread/goal/cleared":
+      return isString(threadId) ? { method: "thread/goal/cleared", params: { threadId } } : null;
     case "skills/changed":
       return Object.keys(params).length === 0 ? { method: "skills/changed", params: {} } : null;
     case "thread/started": {

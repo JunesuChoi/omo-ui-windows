@@ -3,7 +3,7 @@ import type { IpcRendererEvent } from "electron";
 import type {
   BridgeStatus,
   Diagnostics,
-  HistoryTurn,
+  HistoryResult,
   InstallLogLine,
   InstallResult,
   IPC,
@@ -68,7 +68,7 @@ const api = {
   restart: (): Promise<void> => invoke(CHANNELS.restart),
   install: (): Promise<InstallResult> => invoke(CHANNELS.install),
   onInstallLog: (listener: (line: InstallLogLine) => void) => subscribe(CHANNELS.installLog, listener),
-  loadHistory: (sessionPath: string): Promise<HistoryTurn[]> => invoke(CHANNELS.loadHistory, sessionPath),
+  loadHistory: (sessionPath: string): Promise<HistoryResult> => invoke(CHANNELS.loadHistory, sessionPath),
   pickDirectory: (defaultPath?: string | null): Promise<string | null> =>
     invoke(CHANNELS.pickDirectory, defaultPath ?? null),
   getDiagnostics: (): Promise<Diagnostics> => invoke(CHANNELS.diagnostics),

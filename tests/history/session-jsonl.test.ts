@@ -29,7 +29,7 @@ describe("parseSessionJsonl", () => {
   it("rebuilds both turns of the probe session fixture", () => {
     const text = readFileSync(resolve(__dirname, "../fixtures/probe-session.jsonl"), "utf8");
 
-    const turns = parseSessionJsonl(text);
+    const turns = parseSessionJsonl(text).turns;
 
     expect(turns).toHaveLength(2);
     const [first, second] = turns;
@@ -65,7 +65,7 @@ describe("parseSessionJsonl", () => {
       assistant("a2", "u1", 3, [{ type: "text", text: "kept answer" }]),
     ]);
 
-    const turns = parseSessionJsonl(text);
+    const turns = parseSessionJsonl(text).turns;
 
     expect(turns).toHaveLength(1);
     expect(turns[0]?.items.map((item) => item.id)).toEqual(["u1", "a2:0"]);
@@ -77,7 +77,7 @@ describe("parseSessionJsonl", () => {
       assistant("a1", "u1", 2, [{ type: "text", text: "partial" }], "aborted"),
     ]);
 
-    const turns = parseSessionJsonl(text);
+    const turns = parseSessionJsonl(text).turns;
 
     expect(turns[0]?.status).toBe("interrupted");
     expect(turns[0]?.completedAt).toBe(Date.parse(ts(2)));
@@ -86,8 +86,8 @@ describe("parseSessionJsonl", () => {
   it("marks a turn failed when the last assistant message errored", () => {
     const text = jsonl([user("u1", null, 1, "go"), assistant("a1", "u1", 2, [], "error")]);
 
-    expect(parseSessionJsonl(text)[0]?.status).toBe("failed");
-    expect(parseSessionJsonl(text)[0]?.error).toBeNull();
+    expect(parseSessionJsonl(text).turns[0]?.status).toBe("failed");
+    expect(parseSessionJsonl(text).turns[0]?.error).toBeNull();
   });
 
   it("keeps the provider error from an empty assistant message", () => {
@@ -98,7 +98,7 @@ describe("parseSessionJsonl", () => {
         errorMessage: "402: Insufficient Balance", provider: "deepseek",
       }),
     ]);
-    expect(parseSessionJsonl(text)[0]).toMatchObject({
+    expect(parseSessionJsonl(text).turns[0]).toMatchObject({
       status: "failed", error: { message: "402: Insufficient Balance" },
     });
   });
@@ -109,7 +109,7 @@ describe("parseSessionJsonl", () => {
       message("a1", "u1", 2, { role: "assistant", content: [], stopReason: "error", errorMessage: "timeout" }),
       message("a2", "a1", 3, { role: "assistant", content: [], stopReason: "error", errorMessage: "402: Insufficient Balance" }),
     ]);
-    expect(parseSessionJsonl(text)[0]?.error).toEqual({ message: "402: Insufficient Balance" });
+    expect(parseSessionJsonl(text).turns[0]?.error).toEqual({ message: "402: Insufficient Balance" });
   });
 
   it("drops a provider error once a later assistant message in the turn succeeds", () => {
@@ -118,7 +118,7 @@ describe("parseSessionJsonl", () => {
       message("a1", "u1", 2, { role: "assistant", content: [], stopReason: "error", errorMessage: "timeout" }),
       assistant("a2", "a1", 3, [{ type: "text", text: "pong" }]),
     ]);
-    expect(parseSessionJsonl(text)[0]).toMatchObject({ status: "completed", error: null });
+    expect(parseSessionJsonl(text).turns[0]).toMatchObject({ status: "completed", error: null });
   });
 
   it("marks a tool call failed when its result has isError", () => {
@@ -138,7 +138,7 @@ describe("parseSessionJsonl", () => {
       assistant("a2", "r1", 4, [{ type: "text", text: "it failed" }]),
     ]);
 
-    const turns = parseSessionJsonl(text);
+    const turns = parseSessionJsonl(text).turns;
 
     expect(turns[0]?.items[1]).toMatchObject({
       type: "dynamicToolCall",
@@ -166,7 +166,7 @@ describe("parseSessionJsonl", () => {
       JSON.stringify(assistant("a1", "u1", 2, [{ type: "text", text: "yo" }])),
     ];
 
-    const turns = parseSessionJsonl(lines.join("\n"));
+    const turns = parseSessionJsonl(lines.join("\n")).turns;
 
     expect(turns).toHaveLength(1);
     expect(turns[0]?.items.map((item) => item.type)).toEqual(["userMessage", "agentMessage"]);
@@ -180,7 +180,7 @@ describe("parseSessionJsonl", () => {
       assistant("a2", "u2", 4, [{ type: "toolCall", id: "t1", name: "eval", arguments: {} }], "toolUse"),
     ]);
 
-    const turns = parseSessionJsonl(text);
+    const turns = parseSessionJsonl(text).turns;
 
     expect(turns.map((turn) => turn.status)).toEqual(["completed", "inProgress"]);
     expect(turns[1]?.completedAt).toBeNull();
@@ -200,7 +200,7 @@ describe("parseSessionJsonl", () => {
       { type: "compaction", id: "c1", parentId: "a1", timestamp: ts(3), summary: "s", firstKeptEntryId: "u1" },
     ]);
 
-    const turns = parseSessionJsonl(text);
+    const turns = parseSessionJsonl(text).turns;
 
     expect(turns[0]?.items).toEqual([
       {
@@ -230,7 +230,7 @@ describe("parseSessionJsonl", () => {
     const text = jsonl(entries);
 
     const started = performance.now();
-    const turns = parseSessionJsonl(text);
+    const turns = parseSessionJsonl(text).turns;
     const elapsed = performance.now() - started;
 
     expect(text.split("\n").filter((line) => line !== "")).toHaveLength(20_001);

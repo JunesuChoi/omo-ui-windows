@@ -294,6 +294,8 @@ export interface SkillsListResponse {
 }
 
 export interface ClientRequestMap {
+  "thread/goal/get": { params: { threadId: string }; result: { goal: WireGoal | null } };
+  extension_request: { params: { threadId: string; name: string; data?: unknown }; result: unknown };
   initialize: {
     params: {
       clientInfo: { name: string; title: string; version: string };
@@ -342,6 +344,8 @@ export type ClientResult<M extends ClientMethod> = ClientRequestMap[M]["result"]
 
 /** Methods the renderer may call through the bridge; the main process rejects anything else. */
 export const CLIENT_METHODS = [
+  "thread/goal/get",
+  "extension_request",
   "initialize",
   "model/list",
   "skills/list",
@@ -358,6 +362,8 @@ export const CLIENT_METHODS = [
 ] as const satisfies readonly ClientMethod[];
 
 export interface ServerNotificationMap {
+  "thread/goal/updated": { threadId: string; turnId: string | null; goal: WireGoal };
+  "thread/goal/cleared": { threadId: string };
   "skills/changed": Record<string, never>;
   "thread/started": { thread: Thread };
   "thread/status/changed": { threadId: string; status: ThreadStatus };
@@ -381,6 +387,138 @@ export interface ServerNotificationMap {
   error: { error: TurnError; willRetry: boolean; threadId: string; turnId: string };
   "serverRequest/resolved": { threadId: string; requestId: RequestId };
   extension_event: { type: "extension_event"; threadId: string; name: string; data: unknown };
+}
+
+export interface WireGoal {
+  threadId: string;
+  objective: string;
+  status: "active" | "paused" | "blocked" | "complete";
+  tokenBudget: number | null;
+  tokensUsed: number;
+  timeUsedSeconds: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface DagNode {
+  id: string;
+  label?: string;
+  prompt: string;
+  depends_on: string[];
+  state: string;
+  attempt: number;
+  created_at: string;
+  task_id?: string;
+  started_at?: string;
+  completed_at?: string;
+  last_error?: { code: string; message: string };
+}
+
+export interface DagRun {
+  run_id: string;
+  run_key: string;
+  name: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  completed_at?: string;
+  counts: Record<string, number>;
+  nodes: DagNode[];
+  edges: { from: string; to: string }[];
+  waves: { index: number; node_ids: string[] }[];
+  amend_count?: number;
+  lease_holder_pid?: number;
+}
+
+export interface DagUpdated {
+  parent_session_id: string;
+  runs: DagRun[];
+  truncated_runs?: number;
+}
+
+export interface DagActivity {
+  schemaVersion: 1;
+  runId: string;
+  nodeId: string;
+  taskId: string;
+  at: string;
+  activity: string;
+  currentTool?: string;
+  lastAssistantLine?: string;
+  turns: number;
+  toolCalls?: number;
+}
+
+export interface DagHeartbeat {
+  schemaVersion: 1;
+  at: string;
+  runs: { runId: string; headSeq: number }[];
+}
+
+export interface TaskRunStats {
+  runtime_ms: number;
+  turns: number;
+  tool_calls: number;
+  output_tokens?: number;
+  input_tokens?: number;
+  cache_read_tokens?: number;
+  cache_write_tokens?: number;
+  total_tokens?: number;
+  generation_ms?: number;
+  tokens_per_second?: number;
+  cost_usd?: number;
+  cache_hit_rate_last?: number;
+  cache_hit_rate_run?: number;
+  token_status?: "complete" | "partial" | "unavailable";
+  cost_status?: "reported" | "unavailable" | "invalid";
+  duration_status?: "monotonic" | "wall_clock" | "unavailable";
+}
+
+export interface LiveTask {
+  task_id: string;
+  status: string;
+  execution_mode: string;
+  model: string;
+  residency_state: string;
+  depth: number;
+  created_at: string;
+  updated_at: string;
+  name?: string;
+  task_summary?: string;
+  description?: string;
+  category?: string;
+  agent_type?: string;
+  child_session_id?: string;
+  run_stats?: TaskRunStats;
+  final_response?: string;
+  error_message?: string;
+  description_truncated?: true;
+  final_response_truncated?: true;
+  error_message_truncated?: true;
+  failure_kind?: unknown;
+  failure_reason?: unknown;
+  live_progress?: {
+    activity: string;
+    started_at: number;
+    current_tool?: string;
+    last_assistant_line?: string;
+    turns: number;
+    tool_calls?: number;
+    total_tokens?: number;
+    output_tokens?: number;
+    tokens_per_second?: number;
+  };
+}
+
+export interface TasksUpdated {
+  parent_session_id: string;
+  tasks: LiveTask[];
+  truncated_tasks?: number;
+}
+
+export interface TodoPhase {
+  name: string;
+  tasks: { content: string; status: "pending" | "in_progress" | "completed" | "abandoned" }[];
 }
 
 export type ServerNotificationMethod = keyof ServerNotificationMap;

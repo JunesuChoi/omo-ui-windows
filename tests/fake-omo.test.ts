@@ -6,6 +6,9 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
+import { parseSessionJsonl } from "../electron/history/session-jsonl";
+import { parseLiveExtension } from "../src/state/live-wire";
+import { createInitialState, reduce, selectDagRuns, selectGoal, selectTasks } from "../src/state";
 
 const FIXTURE = fileURLToPath(new URL("./fixtures/fake-omo.mjs", import.meta.url));
 const WAIT_MS = 10_000;
@@ -214,6 +217,56 @@ afterEach(async () => {
 });
 
 describe("fake omo binary", () => {
+  it("advances live DAG task todo and goal stages only on explicit requests", async () => {
+    const box = await sandbox();
+    const client = box.launch();
+    await client.handshake();
+    const threadId = await client.startThread(box.dir);
+    expect(await client.request("thread/goal/get", { threadId })).toEqual({ goal: null });
+    const stage1 = client.waitFrame((frame) => frame.method === "extension_event" && at(frame, "params", "name") === "omo.dag.updated", "initial DAG");
+    const turnId = await client.startTurn(threadId, "SCENARIO:omo-live");
+    const first = await stage1;
+    expect(at(first, "params", "data", "runs")).toMatchObject([{ name: "mass-ulw display", status: "running",
+      nodes: [{ id: "A", state: "running" }, { id: "B", state: "blocked" }, { id: "C", state: "blocked" }],
+      waves: [{ index: 0, node_ids: ["A"] }, { index: 1, node_ids: ["B", "C"] }],
+    }]);
+    expect(at(await client.request("thread/goal/get", { threadId }), "goal", "objective")).toBe("Ship the OmO UI app");
+    const before = client.frames.filter((frame) => at(frame, "params", "name") === "omo.dag.updated").length;
+    await client.request("thread/goal/get", { threadId });
+    expect(client.frames.filter((frame) => at(frame, "params", "name") === "omo.dag.updated")).toHaveLength(before);
+
+    await client.request("extension_request", { threadId, name: "fake.advance", data: {} });
+    const stages = client.frames.filter((frame) => at(frame, "params", "name") === "omo.dag.updated");
+    expect(at(stages[1], "params", "data", "runs")).toMatchObject([{ nodes: [
+      { id: "A", state: "completed" }, { id: "B", state: "running" }, { id: "C", state: "scheduled" },
+    ] }]);
+    expect(client.frames.find((frame) => at(frame, "params", "name") === "omo.dag.activity")).toMatchObject({
+      params: { data: { nodeId: "B", activity: "implementing" } },
+    });
+    const completed = client.waitTurnCompleted(turnId);
+    await client.request("extension_request", { threadId, name: "fake.advance", data: {} });
+    await completed;
+    expect(await client.request("thread/goal/get", { threadId })).toEqual({ goal: null });
+    const final = client.frames.filter((frame) => at(frame, "params", "name") === "omo.dag.updated").at(-1);
+    expect(at(final, "params", "data", "runs")).toMatchObject([{ status: "failed", nodes: [
+      { id: "A", state: "completed" }, { id: "B", state: "failed", last_error: { code: "provider_error", message: "402: Insufficient Balance" } }, { id: "C", state: "skipped" },
+    ] }]);
+    const history = parseSessionJsonl(await readFile(join(box.home, "sessions", `${threadId}.jsonl`), "utf8"));
+    expect(history.todo?.phases).toMatchObject([{ name: "Implementation" }, { name: "Verification", tasks: [{ status: "abandoned" }, { status: "pending" }] }]);
+    expect(client.frames.find((frame) => frame.method === "item/completed" && at(frame, "params", "item", "tool") === "todo")).toBeDefined();
+    let state = createInitialState();
+    for (const frame of client.frames) {
+      if (typeof frame.method !== "string" || "id" in frame) continue;
+      if (frame.method === "extension_event") {
+        expect(parseLiveExtension(str(at(frame, "params", "name")), at(frame, "params", "data"))).not.toBeNull();
+      }
+      state = reduce(state, { type: "rpc/notification", notification: { method: frame.method, params: frame.params }, receivedAtMs: 1 });
+    }
+    expect(selectDagRuns(state, threadId)[0]?.status).toBe("failed");
+    expect(selectTasks(state, threadId)).toMatchObject([{ status: "completed", final_response: "A completed" }, { status: "error" }]);
+    expect(selectGoal(state, threadId)).toBeNull();
+    expect(await client.close()).toBe(0);
+  });
   function catalogEntries(result: unknown): Frame[] {
     const data = at(result, "data");
     if (!Array.isArray(data) || !data.every(isRecord)) throw new Error("expected catalog entries");

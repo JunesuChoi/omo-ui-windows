@@ -18,6 +18,7 @@ import { dropRequest, fillEmptyPreview, pushNotice, removeThread, updateThread, 
 import type { AppState, Conversation, ConversationItem } from "./types";
 import type { ServerNotification } from "./wire";
 import { invalidateSkillCatalogs } from "./skills";
+import { applyLiveExtension } from "./live";
 
 interface ItemPlacement {
   threadId: string;
@@ -88,6 +89,14 @@ function completeTurn(conversation: Conversation, notification: Extract<ServerNo
 
 export function applyNotification(state: AppState, notification: ServerNotification, receivedAtMs: number): AppState {
   switch (notification.method) {
+    case "thread/goal/updated":
+    case "thread/goal/cleared": {
+      const { threadId } = notification.params;
+      const goal = notification.method === "thread/goal/updated" ? notification.params.goal : null;
+      return updateConversation(state, threadId, (conversation) => ({
+        ...conversation, live: { ...conversation.live, goal, goalRevision: conversation.live.goalRevision + 1 },
+      }));
+    }
     case "skills/changed":
       return invalidateSkillCatalogs(state);
     case "thread/started":
@@ -171,6 +180,6 @@ export function applyNotification(state: AppState, notification: ServerNotificat
     case "serverRequest/resolved":
       return dropRequest(state, notification.params.requestId);
     case "extension_event":
-      return state;
+      return applyLiveExtension(state, notification.params.threadId, notification.params.name, notification.params.data);
   }
 }

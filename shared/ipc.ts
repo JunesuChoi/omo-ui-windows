@@ -12,6 +12,7 @@ import type {
   ThreadItem,
   TurnError,
   TurnStatus,
+  TodoPhase,
 } from "./protocol";
 
 /** URL of the official omo installer script. */
@@ -85,6 +86,29 @@ export interface HistoryTurn {
   completedAt: number | null;
 }
 
+export interface HistoricalTask {
+  task_id: string;
+  status: string;
+  source: "history";
+  mode?: string;
+  task_summary?: string;
+  name?: string;
+  category?: string;
+  agent_type?: string;
+  execution_mode?: string;
+  model?: string;
+  final_response?: string;
+  error_message?: string;
+  final_response_truncated?: boolean;
+  error_message_truncated?: boolean;
+}
+
+export interface HistoryResult {
+  turns: HistoryTurn[];
+  todo: { phases: TodoPhase[] } | null;
+  tasks: HistoricalTask[];
+}
+
 export interface InstallLogLine {
   stream: "stdout" | "stderr";
   text: string;
@@ -112,7 +136,7 @@ export interface OmoBridgeApi {
   install(): Promise<InstallResult>;
   onInstallLog(listener: (line: InstallLogLine) => void): () => void;
   /** Parses the session JSONL at sessionPath, which must resolve inside the omo sessions directory. */
-  loadHistory(sessionPath: string): Promise<HistoryTurn[]>;
+  loadHistory(sessionPath: string): Promise<HistoryResult>;
   /** Native folder picker; resolves null on cancel. The OMO_UI_QA_PICK_DIR variable short-circuits the dialog. */
   pickDirectory(defaultPath?: string | null): Promise<string | null>;
   getDiagnostics(): Promise<Diagnostics>;

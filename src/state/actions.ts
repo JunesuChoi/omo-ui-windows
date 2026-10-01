@@ -4,6 +4,7 @@ import type { AppStore } from "./store";
 import type { NoticeCode, SessionModel } from "./types";
 import { parseNotification } from "./wire";
 import { selectSkillCatalog } from "./selectors";
+import { object, parseGoal } from "./live-wire";
 
 const THREAD_PAGE_SIZE = 50;
 const RECENT_WORKSPACE_LIMIT = 10;
@@ -62,6 +63,41 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
     }
   };
   const textInput = (text: string): UserInput[] => [{ type: "text", text, text_elements: [] }];
+  const goalReads = new Map<string, number>();
+  const todoReads = new Map<string, number>();
+  let connectionRevision = 0;
+  const readGoal = async (threadId: string): Promise<void> => {
+    const live = store.getState().conversations[threadId]?.live;
+    if (live === undefined) return;
+    const request = (goalReads.get(threadId) ?? 0) + 1;
+    const connection = connectionRevision;
+    goalReads.set(threadId, request);
+    try {
+      const result: unknown = await bridge.request("thread/goal/get", { threadId });
+      if (!object(result) || goalReads.get(threadId) !== request || connection !== connectionRevision) return;
+      const goal = result["goal"] === null ? null : parseGoal(result["goal"]);
+      if (result["goal"] !== null && (goal === null || goal.threadId !== threadId)) return;
+      store.dispatch({ type: "goal/loaded", threadId, goal, generation: live.generation, revision: live.goalRevision });
+    } catch (error) {
+      if (connection === connectionRevision && store.getState().conversations[threadId]?.live.generation === live.generation) fail(error, threadId);
+    }
+  };
+  const refreshTodo = async (threadId: string): Promise<void> => {
+    const state = store.getState();
+    const live = state.conversations[threadId]?.live;
+    const path = state.threads[threadId]?.path;
+    if (live === undefined || path == null) return;
+    const request = (todoReads.get(threadId) ?? 0) + 1;
+    const connection = connectionRevision;
+    todoReads.set(threadId, request);
+    try {
+      const history = await bridge.loadHistory(path);
+      if (todoReads.get(threadId) !== request || connection !== connectionRevision) return;
+      store.dispatch({ type: "todo/loaded", threadId, todo: history.todo, generation: live.generation, revision: live.todoRevision });
+    } catch (error) {
+      if (connection === connectionRevision && store.getState().conversations[threadId]?.live.generation === live.generation) fail(error, threadId);
+    }
+  };
 
   const refreshModels = (): Promise<void> =>
     guarded(async () => {
@@ -111,6 +147,7 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
       let active = true;
       let statusPushed = false;
       const reconciled = new Set<string>();
+      const todoCompletions = new Set<string>();
       const reconcile = async (notification: RpcNotification): Promise<void> => {
         const parsed = parseNotification(notification);
         if (parsed?.method !== "turn/completed") return;
@@ -131,7 +168,7 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
         try {
           const history = await bridge.loadHistory(path);
           if (!active) return;
-          const failed = history.findLast((entry) =>
+          const failed = history.turns.findLast((entry) =>
             entry.status === "failed" && entry.error !== null &&
             entry.completedAt !== null && entry.completedAt >= startedAtMs - 2000,
           );
@@ -159,6 +196,20 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
         bridge.onNotification((notification) => {
           if (!active) return;
           store.dispatch({ type: "rpc/notification", notification, receivedAtMs: now() });
+          const parsed = parseNotification(notification);
+          if (parsed?.method === "turn/completed") void readGoal(parsed.params.threadId);
+          if (parsed?.method === "item/completed" && parsed.params.item.type === "dynamicToolCall") {
+            const item = parsed.params.item;
+            if (item.tool === "todo" || (item.tool === "eval" && evalIncludesTodo(item.arguments, item.contentItems))) {
+              const { threadId, turnId } = parsed.params;
+              const generation = store.getState().conversations[threadId]?.live.generation;
+              const key = JSON.stringify([threadId, turnId, item.id, generation]);
+              if (!todoCompletions.has(key)) {
+                todoCompletions.add(key);
+                void refreshTodo(threadId);
+              }
+            }
+          }
           if (parseNotification(notification)?.method === "skills/changed") {
             const state = store.getState();
             const cwd = state.activeThreadId === null ? undefined : state.threads[state.activeThreadId]?.cwd;
@@ -180,6 +231,7 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
       );
       return () => {
         active = false;
+        connectionRevision += 1;
         for (const unsubscribe of unsubscribers) unsubscribe();
       };
     },
@@ -199,8 +251,8 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
       store.dispatch({ type: "history/loading", threadId });
       const path = state.threads[threadId]?.path ?? null;
       try {
-        const turns = path === null ? [] : await bridge.loadHistory(path);
-        store.dispatch({ type: "history/loaded", threadId, turns });
+        const history = path === null ? { turns: [], todo: null, tasks: [] } : await bridge.loadHistory(path);
+        store.dispatch({ type: "history/loaded", threadId, ...history });
       } catch (error) {
         store.dispatch({ type: "history/failed", threadId, message: errorMessage(error) });
         fail(error, threadId);
@@ -215,6 +267,7 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
         store.dispatch({ type: "thread/opened", thread: result.thread, resumed: true, session: sessionOf(result) });
         store.dispatch({ type: "thread/activated", threadId });
         store.dispatch({ type: "history/loaded", threadId, turns: [] });
+        await readGoal(threadId);
         await ensureSkills(result.thread.cwd);
         await rememberWorkspace(cwd);
         return threadId;
@@ -248,6 +301,7 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
         if (conversation?.resumed !== true) {
           const resumed = await bridge.request("thread/resume", { threadId });
           store.dispatch({ type: "thread/opened", thread: resumed.thread, resumed: true, session: sessionOf(resumed) });
+          await readGoal(threadId);
           await ensureSkills(resumed.thread.cwd);
         }
         store.dispatch({ type: "user/messageSent", threadId, clientId, text, sentAtMs: now() });
@@ -321,4 +375,10 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
       store.dispatch({ type: "notice/dismissed", id });
     },
   };
+}
+
+function evalIncludesTodo(args: unknown, content: unknown): boolean {
+  if (object(args) && typeof args["code"] === "string" && /\b(?:tool\.)?todo\s*\(/u.test(args["code"])) return true;
+  if (object(args) && Array.isArray(args["toolCalls"]) && args["toolCalls"].some((call) => object(call) && call["name"] === "todo")) return true;
+  return Array.isArray(content) && content.some((part) => object(part) && typeof part["text"] === "string" && /\btool\.todo\s*\(/u.test(part["text"]));
 }

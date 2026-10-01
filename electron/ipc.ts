@@ -3,7 +3,7 @@ import path from "node:path";
 import { app, clipboard, dialog, ipcMain, shell } from "electron";
 import type { BrowserWindow, OpenDialogOptions } from "electron";
 import { ENV, IPC } from "../shared/ipc";
-import type { Diagnostics, HistoryTurn, InstallResult, RequestEnvelope } from "../shared/ipc";
+import type { Diagnostics, HistoryResult, InstallResult, RequestEnvelope } from "../shared/ipc";
 import { CLIENT_METHODS } from "../shared/protocol";
 import type { ClientMethod, ClientParams, RequestId } from "../shared/protocol";
 import { parseSessionJsonl } from "./history/session-jsonl";
@@ -81,7 +81,7 @@ export function registerIpc(deps: IpcDeps): () => void {
       })();
       return installing;
     },
-    [IPC.loadHistory]: async (_event, sessionPath): Promise<HistoryTurn[]> => {
+    [IPC.loadHistory]: async (_event, sessionPath): Promise<HistoryResult> => {
       const requested = requireString(sessionPath, "sessionPath");
       if (!path.isAbsolute(requested)) throw new Error("sessionPath must be absolute");
       const codexHome = supervisor.initializeResult?.codexHome ?? path.join(homeDir, ".omo", "agent");

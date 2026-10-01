@@ -1,5 +1,6 @@
-import type { Model } from "../../shared/protocol";
-import type { AppState, Conversation, PendingRequest, SessionModel, SkillCatalog, ThreadSummary } from "./types";
+import type { DagRun, LiveTask, Model, WireGoal } from "../../shared/protocol";
+import type { HistoricalTask } from "../../shared/ipc";
+import type { AppState, Conversation, PendingRequest, SessionModel, SkillCatalog, ThreadSummary, ThreadLiveState } from "./types";
 import { EMPTY_SKILL_CATALOG } from "./skills";
 
 /** Returns a stable idle catalog when this cwd has not been requested. */
@@ -15,6 +16,48 @@ export interface WorkspaceGroup {
 
 export function selectActiveConversation(state: AppState): Conversation | null {
   return state.activeThreadId === null ? null : (state.conversations[state.activeThreadId] ?? null);
+}
+
+export function selectThreadLiveState(state: AppState, threadId: string): ThreadLiveState | null {
+  return state.conversations[threadId]?.live ?? null;
+}
+const EMPTY_RUNS: DagRun[] = [];
+const EMPTY_TASKS: (LiveTask | HistoricalTask)[] = [];
+const runSelections = new WeakMap<ThreadLiveState, DagRun[]>();
+const taskSelections = new WeakMap<ThreadLiveState, (LiveTask | HistoricalTask)[]>();
+export function selectDagRuns(state: AppState, threadId: string): DagRun[] {
+  const live = selectThreadLiveState(state, threadId);
+  if (live === null) return EMPTY_RUNS;
+  const cached = runSelections.get(live);
+  if (cached !== undefined) return cached;
+  const result = live.runOrder.flatMap((id) => live.runs[id] === undefined ? [] : [live.runs[id]]);
+  runSelections.set(live, result);
+  return result;
+}
+/**
+ * Unattached threads show history. Attached threads show the live roster in roster order, then history-only tasks:
+ * omo expires old task records, so a resumed session's roster can omit tasks its session file still lists.
+ * A live record replaces the history entry with the same task_id.
+ */
+export function selectTasks(state: AppState, threadId: string): (LiveTask | HistoricalTask)[] {
+  const live = selectThreadLiveState(state, threadId);
+  if (live === null) return EMPTY_TASKS;
+  if (live.freshness === "unattached") return live.historicalTasks;
+  const cached = taskSelections.get(live);
+  if (cached !== undefined) return cached;
+  const roster = live.taskOrder.flatMap((id) => live.tasks[id] === undefined ? [] : [live.tasks[id]]);
+  const result = [...roster, ...live.historicalTasks.filter((task) => live.tasks[task.task_id] === undefined)];
+  taskSelections.set(live, result);
+  return result;
+}
+export function selectTodo(state: AppState, threadId: string): ThreadLiveState["todo"] {
+  return selectThreadLiveState(state, threadId)?.todo ?? null;
+}
+export function selectGoal(state: AppState, threadId: string): WireGoal | null | undefined {
+  return selectThreadLiveState(state, threadId)?.goal;
+}
+export function selectDagActivity(state: AppState, threadId: string, runId: string, nodeId: string) {
+  return selectThreadLiveState(state, threadId)?.dagActivity[runId]?.[nodeId] ?? null;
 }
 
 function workspaceLabel(cwd: string): string {

@@ -1,4 +1,5 @@
-import type { HistoryTurn } from "../../shared/ipc";
+import type { HistoricalTask, HistoryResult, HistoryTurn } from "../../shared/ipc";
+import { parseTodo } from "../../src/state/live-wire";
 import type { DynamicToolCallContentItem, DynamicToolCallItem, ThreadItem, TurnError, UserInput } from "../../shared/protocol";
 
 type JsonObject = Record<string, unknown>;
@@ -177,7 +178,7 @@ function finishTurn(turn: TurnBuilder, isFinal: boolean): HistoryTurn {
  * Rebuilds the turns of the active branch (last entry back to the root through parentId)
  * of an omo session JSONL file. Malformed lines and non-rendered entry types are skipped.
  */
-export function parseSessionJsonl(text: string): HistoryTurn[] {
+export function parseSessionJsonl(text: string): HistoryResult {
   const entries = new Map<string, Entry>();
   let leafId: string | null = null;
   for (const line of text.split("\n")) {
@@ -189,8 +190,38 @@ export function parseSessionJsonl(text: string): HistoryTurn[] {
   }
 
   const builders: TurnBuilder[] = [];
+  let todo: HistoryResult["todo"] = null;
+  const tasks = new Map<string, HistoricalTask>();
+  const completions = new Map<string, HistoricalTask>();
+  const taskOrder = new Set<string>();
   let turn: TurnBuilder | null = null;
   for (const entry of activeBranch(entries, leafId)) {
+    if (entry.type === "custom" && entry.raw["customType"] === "senpi.todo-state") {
+      const parsed = parseTodo(entry.raw["data"]);
+      if (parsed !== null) todo = parsed;
+    }
+    if (entry.type === "message" && isRecord(entry.raw["message"])) {
+      const message = entry.raw["message"];
+      if (message["role"] === "toolResult" && message["toolName"] === "task") {
+        const task = historicalTask(message["details"], true);
+        if (task !== null) {
+          taskOrder.add(task.task_id);
+          tasks.set(task.task_id, task);
+        }
+      }
+    }
+    if (entry.type === "custom_message" && entry.raw["customType"] === "omo-senpi:wake" && Array.isArray(entry.raw["details"])) {
+      for (const wake of entry.raw["details"]) {
+        if (!isRecord(wake) || wake["customType"] !== "senpi-task.completion" || !Array.isArray(wake["details"])) continue;
+        for (const record of wake["details"]) {
+          const task = historicalTask(record, false);
+          if (task !== null) {
+            taskOrder.add(task.task_id);
+            completions.set(task.task_id, task);
+          }
+        }
+      }
+    }
     if (entry.type === "compaction") {
       turn ??= startTurn(entry);
       if (builders.at(-1) !== turn) builders.push(turn);
@@ -216,5 +247,34 @@ export function parseSessionJsonl(text: string): HistoryTurn[] {
     }
     if (turn !== null && entry.timestamp !== null) turn.lastTimestamp = entry.timestamp;
   }
-  return builders.map((builder, index) => finishTurn(builder, index === builders.length - 1));
+  return { turns: builders.map((builder, index) => finishTurn(builder, index === builders.length - 1)), todo,
+    tasks: [...taskOrder].flatMap((id) => {
+      const receipt = tasks.get(id);
+      const completion = completions.get(id);
+      return completion === undefined ? receipt === undefined ? [] : [receipt] : [{ ...receipt, ...completion }];
+    }) };
+}
+
+function historicalTask(value: unknown, receipt: boolean): HistoricalTask | null {
+  if (!isRecord(value) || typeof value["task_id"] !== "string" || typeof value["status"] !== "string") return null;
+  if (receipt && (typeof value["mode"] !== "string" || typeof value["execution_mode"] !== "string")) return null;
+  const result: HistoricalTask = { task_id: value["task_id"], status: value["status"], source: "history" };
+  const keys = ["mode", "task_summary", "name", "category", "agent_type", "execution_mode", "model", "final_response", "error_message"] as const;
+  for (const key of keys) {
+    if (value[key] !== undefined && typeof value[key] !== "string") return null;
+    if (typeof value[key] === "string") result[key] = value[key];
+  }
+  if (value["subagent_type"] !== undefined) {
+    if (typeof value["subagent_type"] !== "string") return null;
+    result.agent_type = value["subagent_type"];
+  }
+  if (value["resolved_model"] !== undefined) {
+    if (!isRecord(value["resolved_model"]) || typeof value["resolved_model"]["display"] !== "string") return null;
+    result.model = value["resolved_model"]["display"];
+  }
+  for (const key of ["final_response_truncated", "error_message_truncated"] as const) {
+    if (value[key] !== undefined && typeof value[key] !== "boolean") return null;
+    if (typeof value[key] === "boolean") result[key] = value[key];
+  }
+  return result;
 }

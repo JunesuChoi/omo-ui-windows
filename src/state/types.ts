@@ -1,4 +1,5 @@
-import type { BridgeStatus, HistoryTurn } from "../../shared/ipc";
+import type { BridgeStatus, HistoricalTask, HistoryResult, HistoryTurn } from "../../shared/ipc";
+import type { DagActivity, DagHeartbeat, DagRun, LiveTask, TodoPhase, WireGoal } from "../../shared/protocol";
 import type {
   CommandApprovalParams,
   FileChangeApprovalParams,
@@ -70,6 +71,27 @@ export interface Conversation {
   pendingUserMessages: PendingUserMessage[];
   /** The model omo reported in this thread's latest thread/start or thread/resume result. */
   session?: SessionModel;
+  live: ThreadLiveState;
+}
+
+export interface ThreadLiveState {
+  freshness: "unattached" | "live" | "stale";
+  runs: Record<string, DagRun>;
+  runOrder: string[];
+  truncatedRuns?: number;
+  tasks: Record<string, LiveTask>;
+  taskOrder: string[];
+  truncatedTasks?: number;
+  historicalTasks: HistoricalTask[];
+  dagActivity: Record<string, Record<string, DagActivity>>;
+  heartbeat: DagHeartbeat | null;
+  goal: WireGoal | null | undefined;
+  todo: { phases: TodoPhase[]; source: "history" | "live" } | null;
+  diagnostics: number;
+  /** Fences reads across reconnects and newer goal/todo observations. */
+  generation: number;
+  goalRevision: number;
+  todoRevision: number;
 }
 
 export type PendingRequest =
@@ -134,7 +156,9 @@ export type AppEvent =
   | { type: "thread/opened"; thread: Thread; resumed: boolean; session?: SessionModel }
   | { type: "thread/activated"; threadId: string | null }
   | { type: "history/loading"; threadId: string }
-  | { type: "history/loaded"; threadId: string; turns: HistoryTurn[] }
+  | { type: "history/loaded"; threadId: string; turns: HistoryTurn[]; todo?: HistoryResult["todo"]; tasks?: HistoricalTask[] }
+  | { type: "goal/loaded"; threadId: string; goal: WireGoal | null; generation: number; revision: number }
+  | { type: "todo/loaded"; threadId: string; todo: HistoryResult["todo"]; generation: number; revision: number }
   | { type: "history/failed"; threadId: string; message: string }
   | { type: "turn/errorReconciled"; threadId: string; turn: ConversationTurn; error: TurnError }
   | { type: "user/messageSent"; threadId: string; clientId: string; text: string; sentAtMs: number }

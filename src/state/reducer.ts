@@ -39,7 +39,7 @@ function assertNever(value: never): never {
 
 function settleAfterDisconnect(conversation: Conversation): Conversation {
   const live = conversation.turns.some((turn) => turn.status === "inProgress" || turn.items.some((entry) => entry.streaming));
-  if (!live && !conversation.resumed && conversation.activeTurnId === null) return conversation;
+  if (!live && !conversation.resumed && conversation.activeTurnId === null && conversation.live.freshness === "unattached") return conversation;
   const turns = live
     ? conversation.turns.map((turn): ConversationTurn => {
         const items = stopStreaming(turn.items);
@@ -47,7 +47,8 @@ function settleAfterDisconnect(conversation: Conversation): Conversation {
         return { ...turn, items, status: turn.status === "inProgress" ? "interrupted" : turn.status };
       })
     : conversation.turns;
-  return { ...conversation, turns, resumed: false, activeTurnId: null };
+  return { ...conversation, turns, resumed: false, activeTurnId: null,
+    live: { ...conversation.live, freshness: "stale", generation: conversation.live.generation + 1 } };
 }
 
 function applyBridgeStatus(state: AppState, status: BridgeStatus): AppState {
@@ -138,6 +139,7 @@ export function reduce(state: AppState, event: AppEvent): AppState {
       return updateConversation(opened, event.thread.id, (conversation) => ({
         ...conversation,
         resumed: event.resumed,
+        live: { ...conversation.live, freshness: event.resumed ? "live" : conversation.live.freshness },
         ...(event.session === undefined ? {} : { session: event.session }),
       }));
     }
@@ -154,7 +156,24 @@ export function reduce(state: AppState, event: AppEvent): AppState {
         historyError: null,
       }));
     case "history/loaded":
-      return updateExistingConversation(state, event.threadId, (conversation) => mergeHistory(conversation, event.turns));
+      return updateExistingConversation(state, event.threadId, (conversation) => ({
+        ...mergeHistory(conversation, event.turns),
+        live: { ...conversation.live,
+          historicalTasks: event.tasks ?? conversation.live.historicalTasks,
+          todo: conversation.live.todo?.source === "live" || event.todo === undefined ? conversation.live.todo :
+            event.todo === null ? null : { ...event.todo, source: "history" },
+        },
+      }));
+    case "goal/loaded":
+    case "todo/loaded":
+      return updateExistingConversation(state, event.threadId, (conversation) => {
+        const live = conversation.live;
+        if (event.generation !== live.generation ||
+          event.revision !== (event.type === "goal/loaded" ? live.goalRevision : live.todoRevision)) return conversation;
+        return { ...conversation, live: event.type === "goal/loaded"
+          ? { ...live, goal: event.goal, goalRevision: live.goalRevision + 1 }
+          : { ...live, todo: event.todo === null ? null : { ...event.todo, source: "live" }, todoRevision: live.todoRevision + 1 } };
+      });
     case "history/failed":
       return updateExistingConversation(state, event.threadId, (conversation) => ({
         ...conversation,

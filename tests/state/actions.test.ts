@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { OMO_INSTALL_COMMAND } from "../../shared/ipc";
-import type { BridgeStatus, HistoryTurn, OmoBridgeApi, Preferences } from "../../shared/ipc";
+import type { BridgeStatus, HistoryResult, HistoryTurn, OmoBridgeApi, Preferences } from "../../shared/ipc";
 import type {
   ClientMethod,
   ClientParams,
@@ -52,7 +52,8 @@ class FakeBridge implements OmoBridgeApi {
   readonly calls: Array<{ method: ClientMethod; params: unknown }> = [];
   readonly responses: Array<{ id: RequestId; result: unknown }> = [];
   readonly historyLoads: string[] = [];
-  history: () => Promise<HistoryTurn[]> = () => Promise.resolve([]);
+  history: () => Promise<HistoryResult> = () => Promise.resolve({ turns: [], todo: null, tasks: [] });
+  goal: () => Promise<ClientResult<"thread/goal/get">> = async () => ({ goal: null });
   private readonly notificationListeners = new Set<(notification: RpcNotification) => void>();
   readonly failing = new Set<ClientMethod>();
   skills: (cwds: string[]) => Promise<SkillsListResponse> = async (cwds) => ({
@@ -64,6 +65,7 @@ class FakeBridge implements OmoBridgeApi {
   preferences: Preferences = { theme: "system", locale: "system", lastWorkspace: null, recentWorkspaces: [], modelId: null };
   private readonly statusListeners = new Set<(status: BridgeStatus) => void>();
   private readonly handlers: Handlers = {
+    "thread/goal/get": () => this.goal(),
     "model/list": () => ({ data: [model], nextCursor: null }),
     "thread/list": () => ({ data: [makeThread(THREAD_ID, { path: SESSION_PATH })], nextCursor: null }),
     "thread/start": ({ cwd }) => ({
@@ -125,7 +127,7 @@ class FakeBridge implements OmoBridgeApi {
   onInstallLog(): () => void {
     return () => undefined;
   }
-  loadHistory(sessionPath: string): Promise<HistoryTurn[]> {
+  loadHistory(sessionPath: string): Promise<HistoryResult> {
     this.historyLoads.push(sessionPath);
     return this.history();
   }
@@ -183,12 +185,101 @@ function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
   return { promise, resolve: (value) => settle(value) };
 }
 
+function historyOf(turns: HistoryTurn[]): HistoryResult {
+  return { turns, todo: null, tasks: [] };
+}
+
 async function listThread(setupResult: ReturnType<typeof setup>): Promise<void> {
   await setupResult.actions.refreshThreads();
   setupResult.bridge.calls.length = 0;
 }
 
 describe("createActions", () => {
+  const activeGoal: ClientResult<"thread/goal/get">["goal"] = {
+    threadId: THREAD_ID, objective: "ship", status: "active", tokenBudget: null, tokensUsed: 1, timeUsedSeconds: 2,
+    createdAt: 1, updatedAt: 2,
+  };
+  it("reads the native goal once after start and again after turn settlement", async () => {
+    const context = setup();
+    context.bridge.goal = async () => ({ goal: activeGoal });
+    const disconnect = context.actions.connect();
+    try {
+      await context.actions.newThread("/tmp/work/project");
+      expect(context.store.getState().conversations[THREAD_ID]?.live.goal).toEqual(activeGoal);
+      context.bridge.goal = async () => ({ goal: null });
+      const settled = waitForState(context.store, (state) => state.conversations[THREAD_ID]?.live.goal === null);
+      context.bridge.emitNotification("turn/completed", { threadId: THREAD_ID, turn: { ...runningTurn, status: "completed" } });
+      await settled;
+      expect(context.bridge.methods().filter((method) => method === "thread/goal/get")).toHaveLength(2);
+    } finally {
+      disconnect();
+    }
+  });
+  it("does not let an older goal read overwrite a goal notification", async () => {
+    const context = setup();
+    const pending = deferred<ClientResult<"thread/goal/get">>();
+    context.bridge.goal = () => pending.promise;
+    const disconnect = context.actions.connect();
+    const opened = waitForState(context.store, (state) => state.conversations[THREAD_ID]?.resumed === true);
+    const start = context.actions.newThread("/tmp/work/project");
+    await opened;
+    context.bridge.emitNotification("thread/goal/updated", { threadId: THREAD_ID, turnId: null, goal: activeGoal });
+    pending.resolve({ goal: null });
+    await start;
+    expect(context.store.getState().conversations[THREAD_ID]?.live.goal).toEqual(activeGoal);
+    disconnect();
+  });
+  it.each(["todo", "eval"] as const)("refreshes durable todo once after a completed %s call", async (tool) => {
+    const context = setup();
+    await listThread(context);
+    await context.actions.openThread(THREAD_ID);
+    context.bridge.historyLoads.length = 0;
+    const phases = [{ name: "phase", tasks: [{ content: "item", status: "abandoned" as const }] }];
+    context.bridge.history = async () => ({ turns: [], todo: { phases }, tasks: [] });
+    const disconnect = context.actions.connect();
+    await waitForState(context.store, (state) => state.bridge?.state === "starting");
+    const refreshed = waitForState(context.store, (state) => state.conversations[THREAD_ID]?.live.todo?.source === "live");
+    context.bridge.emitNotification("item/completed", { threadId: THREAD_ID, turnId: "turn", item: {
+      type: "dynamicToolCall", id: "todo-1", tool, namespace: null, arguments: tool === "eval" ? { code: 'await tool.todo({op:"view"})' } : {},
+      status: "completed", contentItems: [], success: true, durationMs: 0,
+    } });
+    await refreshed;
+    context.bridge.emitNotification("item/completed", { threadId: THREAD_ID, turnId: "turn", item: {
+      type: "dynamicToolCall", id: "todo-1", tool, namespace: null, arguments: tool === "eval" ? { code: 'await tool.todo({op:"view"})' } : {},
+      status: "completed", contentItems: [], success: true, durationMs: 0,
+    } });
+    expect(context.bridge.historyLoads).toEqual([SESSION_PATH]);
+    expect(context.store.getState().conversations[THREAD_ID]?.live.todo).toEqual({ phases, source: "live" });
+    disconnect();
+  });
+  it("ignores a todo refresh response after bridge reconnect", async () => {
+    const context = setup();
+    await listThread(context);
+    await context.actions.openThread(THREAD_ID);
+    const pending = deferred<HistoryResult>();
+    context.bridge.history = () => pending.promise;
+    const disconnect = context.actions.connect();
+    await waitForState(context.store, (state) => state.bridge?.state === "starting");
+    context.bridge.emitNotification("item/completed", { threadId: THREAD_ID, turnId: "turn", item: {
+      type: "dynamicToolCall", id: "todo-1", tool: "todo", namespace: null, arguments: {},
+      status: "completed", contentItems: [], success: true, durationMs: 0,
+    } });
+    context.bridge.emitStatus(bridgeStatus("restarting"));
+    pending.resolve({ turns: [], todo: { phases: [] }, tasks: [] });
+    await pending.promise;
+    expect(context.store.getState().conversations[THREAD_ID]?.live.todo).toBeNull();
+    disconnect();
+  });
+  it("restores projected history without attaching live state", async () => {
+    const context = setup();
+    await listThread(context);
+    context.bridge.history = async () => ({ turns: [], todo: { phases: [] }, tasks: [{ task_id: "old", status: "running", source: "history" }] });
+    await context.actions.openThread(THREAD_ID);
+    expect(context.store.getState().conversations[THREAD_ID]?.live).toMatchObject({
+      freshness: "unattached", todo: { source: "history", phases: [] }, historicalTasks: [{ task_id: "old", source: "history" }], runs: {}, tasks: {},
+    });
+    expect(context.bridge.methods()).not.toContain("thread/goal/get");
+  });
   const providerError = { message: "402: Insufficient Balance" };
   const failedHistory = (completedAt: number | null = 5_000): HistoryTurn => ({
     id: "history-1", status: "failed", error: providerError, items: [], startedAt: 4_000, completedAt,
@@ -208,11 +299,11 @@ describe("createActions", () => {
 
   it("reconciles an empty completed turn once using the latest failed history error", async () => {
     const context = await reconcileContext();
-    const history = Promise.resolve([
+    const history = Promise.resolve(historyOf([
       failedHistory(4_000),
       { ...failedHistory(), id: "latest", error: { message: "latest failure" } },
       { ...failedHistory(), id: "success", status: "completed" as const, error: null },
-    ]);
+    ]));
     context.bridge.history = () => history;
     context.complete([{ type: "userMessage", id: "u1", clientId: null, content: [] }]);
     await history;
@@ -246,7 +337,7 @@ describe("createActions", () => {
 
   it.each([3_000, 2_999, null])("allows only two seconds of skew (completion %s)", async (completedAt) => {
     const context = await reconcileContext();
-    const history = Promise.resolve([failedHistory(completedAt)]);
+    const history = Promise.resolve(historyOf([failedHistory(completedAt)]));
     context.bridge.history = () => history;
     context.complete();
     await history;
@@ -279,10 +370,10 @@ describe("createActions", () => {
 
   it("leaves the turn unchanged when history has no failed error", async () => {
     const context = await reconcileContext();
-    const history = Promise.resolve([
+    const history = Promise.resolve(historyOf([
       { ...failedHistory(), error: null },
       { ...failedHistory(), id: "success", status: "completed" as const },
-    ]);
+    ]));
     context.bridge.history = () => history;
     context.complete();
     const before = context.store.getState().conversations[THREAD_ID]?.turns[0];
@@ -293,8 +384,8 @@ describe("createActions", () => {
 
   it.each(["deleted", "replaced", "disconnected"] as const)("ignores history after the turn is %s", async (stale) => {
     const context = await reconcileContext();
-    let resolveHistory: (turns: HistoryTurn[]) => void = () => { throw new Error("not initialized"); };
-    const history = new Promise<HistoryTurn[]>((resolve) => { resolveHistory = resolve; });
+    let resolveHistory: (history: HistoryResult) => void = () => { throw new Error("not initialized"); };
+    const history = new Promise<HistoryResult>((resolve) => { resolveHistory = resolve; });
     context.bridge.history = () => history;
     context.complete();
     if (stale === "deleted") context.bridge.emitNotification("thread/deleted", { threadId: THREAD_ID });
@@ -302,17 +393,17 @@ describe("createActions", () => {
       { ...failedHistory(), id: runningTurn.id, error: null },
     ] });
     else context.disconnect();
-    const before = context.store.getState().conversations[THREAD_ID];
-    resolveHistory([failedHistory()]);
+    const before = context.store.getState().conversations[THREAD_ID]?.turns;
+    resolveHistory(historyOf([failedHistory()]));
     await history;
-    expect(context.store.getState().conversations[THREAD_ID]).toBe(before);
+    expect(context.store.getState().conversations[THREAD_ID]?.turns).toBe(before);
     context.disconnect();
   });
 
   it("logs read failures without pushing a notice", async () => {
     const context = await reconcileContext();
     const error = new Error("history unavailable");
-    const history = Promise.reject<HistoryTurn[]>(error);
+    const history = Promise.reject<HistoryResult>(error);
     context.bridge.history = () => history;
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     try {
@@ -331,8 +422,8 @@ describe("createActions", () => {
     await listThread(context);
     await context.actions.openThread(THREAD_ID);
     expect(await context.actions.sendMessage("hello")).toBe(true);
-    expect(context.bridge.methods()).toEqual(["thread/resume", "skills/list", "turn/start"]);
-    expect(context.bridge.calls[2]?.params).toEqual({
+    expect(context.bridge.methods()).toEqual(["thread/resume", "thread/goal/get", "skills/list", "turn/start"]);
+    expect(context.bridge.calls[3]?.params).toEqual({
       threadId: THREAD_ID,
       input: [{ type: "text", text: "hello", text_elements: [] }],
       clientUserMessageId: "id-1",
@@ -426,8 +517,8 @@ describe("skill catalog actions", () => {
     expect(await context.actions.newThread(cwd)).toBe(THREAD_ID);
     await context.actions.ensureSkills(cwd);
     await context.actions.openThread(THREAD_ID);
-    expect(context.bridge.methods()).toEqual(["thread/start", "skills/list"]);
-    expect(context.bridge.calls[1]?.params).toEqual({ cwds: [cwd] });
+    expect(context.bridge.methods()).toEqual(["thread/start", "thread/goal/get", "skills/list"]);
+    expect(context.bridge.calls[2]?.params).toEqual({ cwds: [cwd] });
     expect(selectSkillCatalog(context.store.getState(), cwd)).toMatchObject({ status: "ready", skills: [{ name: "ulw-loop" }] });
   });
 
@@ -436,8 +527,8 @@ describe("skill catalog actions", () => {
     await listThread(context);
     await context.actions.openThread(THREAD_ID);
     expect(await context.actions.sendMessage("/skill:ulw-loop /skill:plan do work")).toBe(true);
-    expect(context.bridge.methods()).toEqual(["thread/resume", "skills/list", "turn/start"]);
-    expect(context.bridge.calls[2]?.params).toMatchObject({
+    expect(context.bridge.methods()).toEqual(["thread/resume", "thread/goal/get", "skills/list", "turn/start"]);
+    expect(context.bridge.calls[3]?.params).toMatchObject({
       input: [{ type: "text", text: "/skill:ulw-loop /skill:plan do work", text_elements: [] }],
     });
   });

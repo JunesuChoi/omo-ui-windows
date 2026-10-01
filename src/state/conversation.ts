@@ -1,6 +1,7 @@
 import type { Thread, ThreadItem, Turn, UserMessageItem } from "../../shared/protocol";
 import type { AppState, Conversation, ConversationItem, ConversationTurn, ThreadSummary } from "./types";
 import { parseItem } from "./wire";
+import { emptyLiveState } from "./live";
 
 export function emptyConversation(threadId: string): Conversation {
   return {
@@ -11,6 +12,7 @@ export function emptyConversation(threadId: string): Conversation {
     activeTurnId: null,
     resumed: false,
     pendingUserMessages: [],
+    live: emptyLiveState(),
   };
 }
 
