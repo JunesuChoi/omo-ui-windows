@@ -21,7 +21,8 @@
     "test": "vitest run",
     "smoke:bridge": "node scripts/build-electron.mjs && node dist-electron/smoke-bridge.cjs",
     "test:e2e": "npm run build && playwright test e2e/fake.spec.ts e2e/notices.spec.ts",
-    "test:e2e:real": "npm run build && OMO_UI_E2E_REAL=1 playwright test e2e/real.spec.ts"
+    "test:e2e:real": "npm run build && OMO_UI_E2E_REAL=1 playwright test e2e/real.spec.ts",
+    "postinstall": "node node_modules/electron/install.js"
   },
   "devDependencies": {
     "electron": "^44.5.1",
