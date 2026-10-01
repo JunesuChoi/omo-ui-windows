@@ -11,19 +11,27 @@
 }
 
 .projectRow {
-  height: 34px;
+  height: 32px;
+  color: var(--dsw-alias-label-secondary);
 }
 
 .sessionRow {
-  height: 32px;
+  height: 38px;
 }
 
 .projectRow:hover,
 .sessionRow:hover,
-.sessionRow.selected,
 .menuOpen,
 .renaming {
   background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.sessionRow.selected {
+  background: var(--dsw-alias-interactive-bg-active);
+}
+
+.projectHoldsActive {
+  color: var(--dsw-alias-label-primary);
 }
 
 .rowMain {
@@ -32,7 +40,7 @@
   align-self: stretch;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   margin: 0;
   padding: 0 8px;
   border: none;
@@ -49,13 +57,18 @@
   outline-offset: -2px;
 }
 
+.projectRow .rowMain {
+  gap: 6px;
+  padding-right: 36px;
+}
+
 .sessionRow .rowMain {
-  gap: 0;
+  padding-right: 32px;
 }
 
 .slot {
   flex: none;
-  width: 16px;
+  width: 14px;
   height: 20px;
   display: inline-flex;
   align-items: center;
@@ -63,29 +76,34 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.folderActive {
-  color: var(--dsw-alias-state-business-primary);
-}
-
-.chevron {
-  display: none;
-  color: var(--dsw-alias-label-caption);
-}
-
-.projectRow:hover .chevron {
-  display: inline-flex;
-}
-
-.projectRow:hover .folder {
-  display: none;
-}
-
 .arrow {
   transition: transform 150ms var(--ds-ease-in-out);
 }
 
-.arrowOpen {
-  transform: rotate(90deg);
+.arrowClosed {
+  transform: rotate(-90deg);
+}
+
+.projectTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.count {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 20px;
+}
+
+.rowBadge {
+  flex: none;
 }
 
 .title {
@@ -95,27 +113,30 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 14px;
+  font-weight: 500;
   line-height: 20px;
 }
 
-.sessionRow .title {
-  margin: 0 6px 0 4px;
+.selected .title {
+  font-weight: 600;
 }
 
-.projectRow:hover .rowMain,
-.projectRow:has(:focus-visible) .rowMain {
-  padding-right: 32px;
+.runningSlot {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
 }
 
 .time {
   flex: none;
-  font-size: 10px;
-  line-height: 16px;
   color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
 }
 
-/* The trailing actions overlay the time cell and fade in rather than unmount, so keyboard
-   focus and test drivers can always reach them. */
+/* The trailing action sits in the row's reserved right padding and fades in rather than unmounting,
+   so keyboard focus and test drivers can always reach it. */
 .rowActions {
   position: absolute;
   top: 0;
@@ -123,22 +144,16 @@
   bottom: 0;
   display: inline-flex;
   align-items: center;
-  gap: 10px;
   opacity: 0;
 }
 
 .projectRow:hover .rowActions,
 .sessionRow:hover .rowActions,
+.sessionRow.selected .rowActions,
 .projectRow:has(:focus-visible) .rowActions,
 .sessionRow:has(:focus-visible) .rowActions,
 .menuOpen .rowActions {
   opacity: 1;
-}
-
-.sessionRow:hover .time,
-.sessionRow:has(:focus-visible) .time,
-.menuOpen .time {
-  opacity: 0;
 }
 
 .iconButton {
@@ -146,8 +161,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border: none;
   border-radius: var(--dsw-radius-xs);
@@ -157,20 +172,24 @@
 }
 
 .iconButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
 }
 
-.renameSlot {
-  display: inline-flex;
+.grip {
+  width: 18px;
+}
+
+.renaming {
   padding-left: 8px;
 }
 
 .renameInput {
   flex: 1;
   min-width: 0;
-  height: 24px;
+  height: 26px;
   box-sizing: border-box;
-  margin: 0 6px 0 4px;
+  margin: 0 8px;
   padding: 0 6px;
   border: 0.5px solid var(--dsw-alias-border-l4);
   border-radius: var(--dsw-radius-sm);

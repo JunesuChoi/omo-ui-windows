@@ -1,7 +1,10 @@
-import { useContext, useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent } from "react";
 import {
-  IconNewChatOutlineMedium,
+  IconCloseCircleFillRegular,
+  IconPanelLeftOutlineRegular,
   IconQueueOutlineRegular,
+  IconSearchOutlineRegular,
   IconSettingsOutlineMedium,
   StateDot,
   Tooltip,
@@ -9,14 +12,19 @@ import {
 import type { StateDotState } from "@deepseek-ai/dsh-client-ui-primitives";
 import type { BridgeState, BridgeStatus } from "../../../shared/ipc";
 import { selectThreadsByWorkspace } from "../../state";
+import type { ThreadSummary } from "../../state";
 import { useT } from "../../i18n";
 import { StoreContext, useActions, useAppSelector } from "../app-context";
+import { APP_VERSION, isPreRelease } from "../app-version";
+import { threadTitle } from "../conversation/format";
+import { BrandMark, PlusCircleGlyph } from "../glyphs";
 import { useNewSessionFlow } from "../new-session";
 import { TESTID } from "../testids";
 import { uiState } from "../ui-state";
 import { DeleteThreadDialog } from "./DeleteThreadDialog";
 import type { DeleteTarget } from "./DeleteThreadDialog";
 import { ThreadRow, WorkspaceRow } from "./Rows";
+import { filterGroups } from "./thread-filter";
 import css from "./Sidebar.module.css";
 
 const DOT_STATE: Record<BridgeState, StateDotState> = {
@@ -76,10 +84,19 @@ export function Sidebar() {
   const disconnectedHint = connected ? undefined : t("shell.newSessionDisconnected");
   const nowMs = useNowMs();
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
+  const [query, setQuery] = useState("");
   const [loadingMore, setLoadingMore] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const groupsRef = useRef(groups);
   groupsRef.current = groups;
+  const searchRef = useRef<HTMLInputElement | null>(null);
+
+  const fallbackTitle = t("shell.newSession");
+  const visibleGroups = useMemo(
+    () => filterGroups(groups, query, (thread: ThreadSummary) => threadTitle(thread, fallbackTitle)),
+    [groups, query, fallbackTitle],
+  );
+  const searching = query.trim() !== "";
 
   const expand = (cwd: string): void => {
     setCollapsed((current) => {
@@ -124,36 +141,83 @@ export function Sidebar() {
     });
   };
 
+  const clearSearch = (): void => {
+    setQuery("");
+    searchRef.current?.focus();
+  };
+
+  const onSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
+    if (event.key === "Escape" && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      clearSearch();
+    }
+  };
+
   return (
     <nav className={css.root} data-testid={TESTID.sidebar} aria-label={t("shell.sessions")}>
       <div className={css.header} data-window-drag>
-        <span className={css.brand}>{t("app.brand")}</span>
+        <span className={css.brand}>
+          <BrandMark size={22} className={css.brandMark} />
+          <span className={css.brandName}>{t("app.brand")}</span>
+          {isPreRelease(APP_VERSION) && (
+            <span className={css.devBadge} title={APP_VERSION}>
+              {t("shell.devBadge")}
+            </span>
+          )}
+        </span>
+        <Tooltip label={t("shell.hideSidebar")} side="bottom" align="end" delayMs={500}>
+          <button
+            type="button"
+            className={css.headerButton}
+            data-testid={TESTID.sidebarToggle}
+            aria-label={t("shell.hideSidebar")}
+            onClick={() => uiState.toggleSidebar()}
+          >
+            <IconPanelLeftOutlineRegular size={16} />
+          </button>
+        </Tooltip>
       </div>
-      <button
-        type="button"
-        className={css.newSession}
-        data-testid={TESTID.newSession}
-        disabled={!connected}
-        title={disconnectedHint}
-        onClick={() => void newSession()}
-      >
-        <IconNewChatOutlineMedium size={14} />
-        <span className={css.newSessionLabel}>{t("shell.newSession")}</span>
-      </button>
+      <div className={css.search} role="search">
+        <IconSearchOutlineRegular size={14} className={css.searchIcon} />
+        <input
+          ref={searchRef}
+          type="text"
+          className={css.searchInput}
+          data-testid={TESTID.sidebarSearch}
+          aria-label={t("shell.search.label")}
+          placeholder={t("shell.search.placeholder")}
+          value={query}
+          spellCheck={false}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={onSearchKeyDown}
+        />
+        {query !== "" && (
+          <button
+            type="button"
+            className={css.searchClear}
+            data-testid={TESTID.sidebarSearchClear}
+            aria-label={t("shell.search.clear")}
+            onClick={clearSearch}
+          >
+            <IconCloseCircleFillRegular size={14} />
+          </button>
+        )}
+      </div>
       <div className={css.region}>
-        {(threadsLoaded || groups.length > 0) && <div className={css.sectionHeader}>{t("shell.sessions")}</div>}
         <div className={css.list}>
           {threadsLoaded && groups.length === 0 && (
             <div className={css.emptyState}>
               <IconQueueOutlineRegular size={24} />
               <div>{t("shell.noSessions")}</div>
-              <button type="button" className={css.emptyAction} disabled={!connected} title={disconnectedHint} onClick={() => void newSession()}>
-                {t("shell.sidebar.startSession")}
-              </button>
             </div>
           )}
-          {groups.map((group) => {
-            const expanded = !collapsed.has(group.cwd);
+          {searching && groups.length > 0 && visibleGroups.length === 0 && (
+            <div className={css.emptyState} data-testid={TESTID.sidebarNoMatch} role="status">
+              <div>{t("shell.search.noMatch", { query: query.trim() })}</div>
+            </div>
+          )}
+          {visibleGroups.map((group) => {
+            const expanded = searching || !collapsed.has(group.cwd);
             const holdsActive = group.threads.some((thread) => thread.id === activeThreadId);
             return (
               <div
@@ -190,11 +254,22 @@ export function Sidebar() {
               </div>
             );
           })}
-          {hasMore && (
+          {hasMore && !searching && (
             <button type="button" className={css.loadMore} disabled={loadingMore} onClick={() => void loadMore()}>
               {loadingMore ? t("shell.sidebar.loadingMore") : t("shell.sidebar.loadMore")}
             </button>
           )}
+          <button
+            type="button"
+            className={css.newProject}
+            data-testid={TESTID.newSession}
+            disabled={!connected}
+            title={disconnectedHint}
+            onClick={() => void newSession()}
+          >
+            <span className={css.newProjectLabel}>{t("shell.newProject")}</span>
+            <PlusCircleGlyph size={16} className={css.newProjectIcon} />
+          </button>
         </div>
       </div>
       <div className={css.foot}>

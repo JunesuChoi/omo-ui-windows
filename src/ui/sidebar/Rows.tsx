@@ -3,24 +3,22 @@ import { useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import clsx from "clsx";
 import {
+  IconChevronDownOutlineRegular,
   IconEditOutlineRegular,
-  IconEllipsisOutlineRegular,
-  IconFolderCloseRegular,
   IconFolderOpenOutlineRegular,
-  IconFolderOpenRegular,
-  IconPlusOutlineRegular,
   IconTrashOutlineRegular,
-  IconTriangleRightFillRegular,
   Menu,
   StateDot,
   Tooltip,
-  relativeTime,
 } from "@deepseek-ai/dsh-client-ui-primitives";
 import type { MenuEntry } from "@deepseek-ai/dsh-client-ui-primitives";
 import type { ThreadSummary, WorkspaceGroup } from "../../state";
 import { useT } from "../../i18n";
 import { threadTitle } from "../conversation/format";
+import { GripGlyph } from "../glyphs";
 import { TESTID } from "../testids";
+import { formatThreadTime } from "./thread-time";
+import { WorkspaceBadge } from "./WorkspaceBadge";
 import css from "./Rows.module.css";
 
 interface WorkspaceRowProps {
@@ -33,24 +31,30 @@ interface WorkspaceRowProps {
 
 export function WorkspaceRow({ group, expanded, hidesActiveThread, onToggle, onCreate }: WorkspaceRowProps) {
   const t = useT();
-  const createLabel = t("shell.sidebar.newSessionIn", { name: group.label });
+  const createLabel = t("shell.sidebar.newThreadIn", { name: group.label });
+  const toggleLabel = t(expanded ? "shell.sidebar.collapseGroup" : "shell.sidebar.expandGroup", { name: group.label });
   return (
-    <div className={css.projectRow}>
-      <button type="button" className={css.rowMain} aria-expanded={expanded} onClick={onToggle}>
-        <span className={clsx(css.slot, css.folder, hidesActiveThread && css.folderActive)}>
-          {expanded ? <IconFolderOpenRegular /> : <IconFolderCloseRegular />}
-        </span>
+    <div className={clsx(css.projectRow, hidesActiveThread && css.projectHoldsActive)}>
+      <button type="button" className={css.rowMain} aria-expanded={expanded} aria-label={toggleLabel} title={group.cwd} onClick={onToggle}>
         <span className={clsx(css.slot, css.chevron)}>
-          <IconTriangleRightFillRegular className={clsx(css.arrow, expanded && css.arrowOpen)} />
+          <IconChevronDownOutlineRegular size={12} className={clsx(css.arrow, !expanded && css.arrowClosed)} />
         </span>
-        <span className={css.title} title={group.cwd}>
-          {group.label}
+        <WorkspaceBadge cwd={group.cwd} size="sm" />
+        <span className={css.projectTitle}>{group.label}</span>
+        <span className={css.count} aria-label={t("shell.sidebar.threadCount", { count: group.threads.length })}>
+          {group.threads.length}
         </span>
       </button>
       <span className={css.rowActions}>
         <Tooltip label={createLabel} side="bottom" align="end" delayMs={500}>
-          <button type="button" className={css.iconButton} aria-label={createLabel} onClick={onCreate}>
-            <IconPlusOutlineRegular />
+          <button
+            type="button"
+            className={css.iconButton}
+            data-testid={TESTID.workspaceCompose}
+            aria-label={createLabel}
+            onClick={onCreate}
+          >
+            <IconEditOutlineRegular size={14} />
           </button>
         </Tooltip>
       </span>
@@ -127,29 +131,18 @@ export function ThreadRow({ thread, active, nowMs, onOpen, onRename, onRequestDe
   const [renaming, setRenaming] = useState(false);
   const title = threadTitle(thread, t("shell.newSession"));
   const running = thread.status.type === "active";
-  const { unit, n } = relativeTime(thread.updatedAt, nowMs);
-
-  const slot = (
-    <span className={css.slot}>
-      {running && (
-        <>
-          <StateDot state="ongoing" />
-          <span className={css.visuallyHidden}>{t("shell.sidebar.running")}</span>
-        </>
-      )}
-    </span>
-  );
 
   const rowProps = {
     "data-testid": TESTID.threadRow,
     "data-thread-id": thread.id,
+    "data-title": title,
     "aria-current": active ? ("page" as const) : undefined,
   };
 
   if (renaming) {
     return (
       <div className={clsx(css.sessionRow, css.renaming)} {...rowProps}>
-        <span className={css.renameSlot}>{slot}</span>
+        <WorkspaceBadge cwd={thread.cwd} className={css.rowBadge} />
         <RenameInput
           initial={thread.name ?? title}
           label={t("shell.sidebar.renameLabel")}
@@ -188,9 +181,15 @@ export function ThreadRow({ thread, active, nowMs, onOpen, onRename, onRequestDe
   return (
     <div className={clsx(css.sessionRow, active && css.selected, menuOpen && css.menuOpen)} {...rowProps}>
       <button type="button" className={css.rowMain} onClick={() => onOpen(thread.id)}>
-        {slot}
+        <WorkspaceBadge cwd={thread.cwd} className={css.rowBadge} />
         <span className={css.title}>{title}</span>
-        <span className={css.time}>{t(`shell.time.${unit}`, { n })}</span>
+        {running && (
+          <span className={css.runningSlot}>
+            <StateDot state="ongoing" />
+            <span className={css.visuallyHidden}>{t("shell.sidebar.running")}</span>
+          </span>
+        )}
+        <span className={css.time}>{formatThreadTime(thread.updatedAt, nowMs, t)}</span>
       </button>
       <span className={css.rowActions}>
         <Menu
@@ -203,14 +202,14 @@ export function ThreadRow({ thread, active, nowMs, onOpen, onRename, onRequestDe
           anchor={
             <button
               type="button"
-              className={css.iconButton}
+              className={clsx(css.iconButton, css.grip)}
               data-testid={TESTID.threadMenu}
               aria-label={t("shell.sidebar.sessionActions", { name: title })}
               aria-haspopup="menu"
               aria-expanded={menuOpen}
               onClick={() => setMenuOpen((open) => !open)}
             >
-              <IconEllipsisOutlineRegular />
+              <GripGlyph />
             </button>
           }
         />
