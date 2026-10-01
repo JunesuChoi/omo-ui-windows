@@ -222,3 +222,39 @@ export function lastTurn(page: Page): Locator {
 export function threadRow(page: Page, threadId: string): Locator {
   return page.locator(`[data-testid="${TESTID.threadRow}"][data-thread-id="${threadId}"]`);
 }
+
+function luminance(color: string): number {
+  const match = /^rgba?\(([^)]+)\)$/.exec(color);
+  if (match === null) throw new Error(`not an rgb() color: ${color}`);
+  const [r = 0, g = 0, b = 0] = (match[1] ?? "").split(",").slice(0, 3).map((part) => Number(part.trim()) / 255);
+  const linear = (value: number): number => (value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+}
+
+/** WCAG contrast ratio of two computed rgb()/rgba() colors; alpha is ignored, so pass opaque colors. */
+export function contrastRatio(foreground: string, background: string): number {
+  const [lighter = 0, darker = 0] = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+/** The computed text and background colors of an element. */
+export async function colorsOf(locator: Locator): Promise<{ color: string; background: string }> {
+  return locator.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { color: style.color, background: style.backgroundColor };
+  });
+}
+
+/** The computed colors of two theme tokens under the current body theme, as text color and background. */
+export async function tokenColors(page: Page, foreground: string, background: string): Promise<{ color: string; background: string }> {
+  return page.evaluate(({ fg, bg }) => {
+    const probe = document.createElement("div");
+    probe.style.color = `var(${fg})`;
+    probe.style.backgroundColor = `var(${bg})`;
+    document.body.append(probe);
+    const style = getComputedStyle(probe);
+    const colors = { color: style.color, background: style.backgroundColor };
+    probe.remove();
+    return colors;
+  }, { fg: foreground, bg: background });
+}

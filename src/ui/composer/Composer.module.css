@@ -274,7 +274,7 @@
   border-radius: 999px;
   corner-shape: round;
   background: var(--dsw-omo-accent-green);
-  color: var(--dsw-alias-label-primary-foreground);
+  color: var(--dsw-omo-accent-foreground);
   cursor: pointer;
   transition: background-color 100ms ease;
 }

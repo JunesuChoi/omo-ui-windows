@@ -42,6 +42,8 @@ body {
   --dsw-omo-accent-orange: #f97316;
   --dsw-omo-accent-green: #22c55e;
   --dsw-omo-accent-green-hover: #16a34a;
+  /* Icon color on the accents (the composer send button) in both themes. */
+  --dsw-omo-accent-foreground: #ffffff;
   --dsw-omo-keyword-gradient: linear-gradient(90deg, var(--dsw-omo-accent-orange), var(--dsw-omo-accent-green));
   /* Initials badges: the row supplies the hue (--dsh-badge-hue, 0-359) and WorkspaceBadge.module.css composes
      hsl() from it with these saturation, lightness and alpha values. */
@@ -72,7 +74,8 @@ body[data-ds-dark-theme] {
   --dsw-alias-label-tertiary: #8a8a8a;
   --dsw-alias-label-caption: #737373;
   --dsw-alias-label-dimmed: #404040;
-  --dsw-alias-label-primary-foreground: #ffffff;
+  /* Text and icons on the light fills of the dark theme: the DSH primary Button and a checked checkbox. */
+  --dsw-alias-label-primary-foreground: #0a0a0a;
   --dsw-alias-scrollbar-bg-l2: #404040;
   --dsw-alias-bg-skeleton: rgba(255, 255, 255, 0.06);
 

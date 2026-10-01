@@ -1,7 +1,21 @@
 import { rmSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import { TESTID } from "../src/ui/testids.ts";
-import { byTestId, lastTurn, launchApp, newSession, send, setTheme, shot, tempDir, threadRow, type LaunchedApp } from "./helpers.ts";
+import {
+  byTestId,
+  colorsOf,
+  contrastRatio,
+  lastTurn,
+  launchApp,
+  newSession,
+  send,
+  setTheme,
+  shot,
+  tempDir,
+  threadRow,
+  tokenColors,
+  type LaunchedApp,
+} from "./helpers.ts";
 
 test.describe.configure({ mode: "serial" });
 
@@ -109,4 +123,34 @@ test("relaunch lists the thread and restores its history", async () => {
   await expect(page.locator(`[data-testid="${TESTID.toolCard}"][data-tool="eval"]`)).toBeVisible();
   await expect(byTestId(page, TESTID.assistantMessage).filter({ hasText: "You picked B" })).toBeVisible();
   await shot(page, "C002-resumed");
+});
+
+test("dark primary buttons keep readable text, and the send arrow stays white in both themes", async () => {
+  const { page } = current();
+  const white = "rgb(255, 255, 255)";
+  await setTheme(page, "dark");
+  await newSession(page);
+  await send(page, "SCENARIO:full");
+  const accept = byTestId(page, TESTID.approvalAccept);
+  await expect(accept).toBeVisible();
+  const allow = await colorsOf(accept);
+  expect(contrastRatio(allow.color, allow.background)).toBeGreaterThanOrEqual(4.5);
+  await shot(page, "G010-dark-approval");
+  await accept.click();
+  const question = byTestId(page, TESTID.questionCard);
+  await expect(question).toBeVisible();
+  await question.locator(`[data-testid="${TESTID.questionOption}"][data-label="B"]`).click();
+  const submit = await colorsOf(byTestId(page, TESTID.questionSubmit));
+  expect(contrastRatio(submit.color, submit.background)).toBeGreaterThanOrEqual(4.5);
+  const checkmark = await tokenColors(page, "--dsw-alias-label-primary-foreground", "--dsw-alias-label-primary");
+  expect(contrastRatio(checkmark.color, checkmark.background)).toBeGreaterThanOrEqual(3);
+  await shot(page, "G010-dark-question");
+  await byTestId(page, TESTID.questionSubmit).click();
+  await expect(lastTurn(page)).toHaveAttribute("data-status", "completed");
+  await expect(byTestId(page, TESTID.composerSend)).toHaveCSS("color", white);
+  await setTheme(page, "light");
+  await expect(byTestId(page, TESTID.composerSend)).toHaveCSS("color", white);
+  const lightPrimary = await tokenColors(page, "--dsw-alias-label-primary-foreground", "--dsw-alias-button-primary-fill");
+  expect(lightPrimary.color).toBe(white);
+  expect(contrastRatio(lightPrimary.color, lightPrimary.background)).toBeGreaterThanOrEqual(4.5);
 });
