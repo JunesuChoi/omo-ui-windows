@@ -254,3 +254,9 @@
   line-height: 18px;
   color: var(--dsw-alias-label-secondary);
 }
+
+.newSession:disabled,
+.emptyAction:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

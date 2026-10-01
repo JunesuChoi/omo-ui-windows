@@ -106,7 +106,8 @@ export function Composer() {
         drafts.current.delete(NO_THREAD_DRAFT);
       }
       setText("");
-      await actions.sendMessage(message);
+      const sent = await actions.sendMessage(message);
+      if (!sent) setText((current) => (current === "" ? message : current));
     } finally {
       setBusy(false);
       inputRef.current?.focus({ preventScroll: true });

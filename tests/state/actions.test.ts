@@ -51,6 +51,7 @@ class FakeBridge implements OmoBridgeApi {
   readonly calls: Array<{ method: ClientMethod; params: unknown }> = [];
   readonly responses: Array<{ id: RequestId; result: unknown }> = [];
   readonly historyLoads: string[] = [];
+  readonly failing = new Set<ClientMethod>();
   status = bridgeStatus("starting");
   preferences: Preferences = { theme: "system", locale: "system", lastWorkspace: null, recentWorkspaces: [], modelId: null };
   private readonly statusListeners = new Set<(status: BridgeStatus) => void>();
@@ -70,6 +71,7 @@ class FakeBridge implements OmoBridgeApi {
 
   async request<M extends ClientMethod>(method: M, params: ClientParams<M>): Promise<ClientResult<M>> {
     this.calls.push({ method, params });
+    if (this.failing.has(method)) throw new Error(`-32000: ${method} failed`);
     const handler = this.handlers[method];
     if (handler === undefined) throw new Error(`-32601: unhandled ${method}`);
     return handler(params);
@@ -169,7 +171,7 @@ describe("createActions", () => {
     const context = setup();
     await listThread(context);
     await context.actions.openThread(THREAD_ID);
-    await context.actions.sendMessage("hello");
+    expect(await context.actions.sendMessage("hello")).toBe(true);
     expect(context.bridge.methods()).toEqual(["thread/resume", "turn/start"]);
     expect(context.bridge.calls[1]?.params).toEqual({
       threadId: THREAD_ID,
@@ -186,14 +188,25 @@ describe("createActions", () => {
     await listThread(context);
     await context.actions.openThread(THREAD_ID);
     context.store.dispatch(notification("turn/started", { threadId: THREAD_ID, turn: runningTurn }));
-    await context.actions.sendMessage("also this");
+    expect(await context.actions.sendMessage("also this")).toBe(true);
     expect(context.bridge.calls).toEqual([
       {
         method: "turn/steer",
         params: { threadId: THREAD_ID, expectedTurnId: "turn-9", input: [{ type: "text", text: "also this", text_elements: [] }] },
       },
     ]);
-    expect(context.store.getState().notices).toMatchObject([{ level: "info", threadId: THREAD_ID }]);
+    expect(context.store.getState().notices).toMatchObject([{ level: "info", threadId: THREAD_ID, code: "steered" }]);
+  });
+
+  it("resolves false and drops the pending message when turn/start fails", async () => {
+    const context = setup();
+    await listThread(context);
+    await context.actions.openThread(THREAD_ID);
+    context.bridge.failing.add("turn/start");
+    expect(await context.actions.sendMessage("hello")).toBe(false);
+    const state = context.store.getState();
+    expect(state.conversations[THREAD_ID]?.pendingUserMessages).toEqual([]);
+    expect(state.notices).toMatchObject([{ level: "error", message: "-32000: turn/start failed", threadId: THREAD_ID }]);
   });
 
   it("answers a user-input request with the wire answer map", async () => {

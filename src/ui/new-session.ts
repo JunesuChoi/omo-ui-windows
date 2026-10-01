@@ -1,5 +1,6 @@
-import { useCallback } from "react";
-import { useActions } from "./app-context";
+import { useCallback, useContext } from "react";
+import { useT } from "../i18n";
+import { StoreContext, useActions } from "./app-context";
 import { uiState } from "./ui-state";
 
 /**
@@ -9,10 +10,19 @@ import { uiState } from "./ui-state";
  */
 export function useNewSessionFlow(): () => Promise<string | null> {
   const actions = useActions();
+  const store = useContext(StoreContext);
+  const t = useT();
   return useCallback(async () => {
+    if (store !== null && store.getState().bridge?.state !== "connected") {
+      store.dispatch({
+        type: "notice/pushed",
+        notice: { id: crypto.randomUUID(), level: "error", message: t("shell.newSessionDisconnected"), threadId: null },
+      });
+      return null;
+    }
     const last = uiState.get().preferences?.lastWorkspace ?? null;
     const cwd = await window.omo.pickDirectory(last);
     if (cwd === null) return null;
     return actions.newThread(cwd);
-  }, [actions]);
+  }, [actions, store, t]);
 }

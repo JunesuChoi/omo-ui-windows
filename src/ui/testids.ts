@@ -47,6 +47,7 @@ export const TESTID = {
   onboardingRetry: "onboarding-retry",
   installLog: "install-log",
   connectionBanner: "connection-banner",
+  noticeToast: "notice-toast",
 } as const;
 
 export type TestId = (typeof TESTID)[keyof typeof TESTID];

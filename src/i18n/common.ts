@@ -15,6 +15,8 @@ export const messages = {
     "common.stop": "Stop",
     "common.copy": "Copy",
     "common.retry": "Retry",
+    "notice.noActiveThread": "Open or start a session before sending a message.",
+    "notice.steered": "Sent to the running turn.",
   },
   ko: {
     "app.name": "OmO UI",
@@ -32,5 +34,7 @@ export const messages = {
     "common.stop": "중지",
     "common.copy": "복사",
     "common.retry": "다시 시도",
+    "notice.noActiveThread": "메시지를 보내기 전에 세션을 열거나 새로 시작하세요.",
+    "notice.steered": "실행 중인 턴에 전달했습니다.",
   },
 } as const;

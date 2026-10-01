@@ -72,6 +72,8 @@ export function Sidebar() {
   const threadsLoaded = useAppSelector((state) => state.threadsLoaded);
   const hasMore = useAppSelector((state) => state.threadsCursor !== null);
   const bridge = useAppSelector((state) => state.bridge);
+  const connected = bridge?.state === "connected";
+  const disconnectedHint = connected ? undefined : t("shell.newSessionDisconnected");
   const nowMs = useNowMs();
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
   const [loadingMore, setLoadingMore] = useState(false);
@@ -127,7 +129,14 @@ export function Sidebar() {
       <div className={css.header} data-window-drag>
         <span className={css.brand}>{t("app.brand")}</span>
       </div>
-      <button type="button" className={css.newSession} data-testid={TESTID.newSession} onClick={() => void newSession()}>
+      <button
+        type="button"
+        className={css.newSession}
+        data-testid={TESTID.newSession}
+        disabled={!connected}
+        title={disconnectedHint}
+        onClick={() => void newSession()}
+      >
         <IconNewChatOutlineMedium size={14} />
         <span className={css.newSessionLabel}>{t("shell.newSession")}</span>
       </button>
@@ -138,7 +147,7 @@ export function Sidebar() {
             <div className={css.emptyState}>
               <IconQueueOutlineRegular size={24} />
               <div>{t("shell.noSessions")}</div>
-              <button type="button" className={css.emptyAction} onClick={() => void newSession()}>
+              <button type="button" className={css.emptyAction} disabled={!connected} title={disconnectedHint} onClick={() => void newSession()}>
                 {t("shell.sidebar.startSession")}
               </button>
             </div>

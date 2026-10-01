@@ -66,11 +66,15 @@ export type PendingRequest =
   | { kind: "fileChangeApproval"; id: RequestId; threadId: string; params: FileChangeApprovalParams; receivedAtMs: number }
   | { kind: "userInput"; id: RequestId; threadId: string; params: UserInputParams; receivedAtMs: number };
 
+/** Notices the UI translates by code; a notice without a code shows its message as-is (omo's own error text). */
+export type NoticeCode = "noActiveThread" | "steered";
+
 export interface Notice {
   id: string;
   level: "info" | "error";
   message: string;
   threadId: string | null;
+  code?: NoticeCode;
 }
 
 export interface ComposerState {

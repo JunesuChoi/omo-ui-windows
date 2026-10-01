@@ -6,6 +6,7 @@ export type {
   ConversationItem,
   ConversationTurn,
   Notice,
+  NoticeCode,
   PendingRequest,
   PendingUserMessage,
   ThreadSummary,

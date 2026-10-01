@@ -1,6 +1,7 @@
 export const messages = {
   en: {
     "shell.newSession": "New session",
+    "shell.newSessionDisconnected": "Waiting for omo to connect",
     "shell.sessions": "Sessions",
     "shell.noSessions": "No sessions yet",
     "shell.untitledThread": "Untitled session",
@@ -103,6 +104,7 @@ export const messages = {
   },
   ko: {
     "shell.newSession": "새 세션",
+    "shell.newSessionDisconnected": "omo 연결을 기다리는 중",
     "shell.sessions": "세션",
     "shell.noSessions": "아직 세션이 없습니다",
     "shell.untitledThread": "제목 없는 세션",

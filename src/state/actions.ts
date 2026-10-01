@@ -1,6 +1,7 @@
 import type { BridgeStatus, OmoBridgeApi } from "../../shared/ipc";
 import type { ApprovalDecision, ReasoningEffort, RequestId, UserInput } from "../../shared/protocol";
 import type { AppStore } from "./store";
+import type { NoticeCode } from "./types";
 
 const THREAD_PAGE_SIZE = 50;
 const RECENT_WORKSPACE_LIMIT = 10;
@@ -20,8 +21,8 @@ export interface AppActions {
   openThread(threadId: string): Promise<void>;
   /** Starts and activates a thread in `cwd`; resolves its id, or null on failure. */
   newThread(cwd: string): Promise<string | null>;
-  /** Sends to the active thread: steers the running turn, otherwise resumes the thread if needed and starts a turn. */
-  sendMessage(text: string): Promise<void>;
+  /** Sends to the active thread: steers the running turn, otherwise resumes the thread if needed and starts a turn; resolves true when omo accepted the message. */
+  sendMessage(text: string): Promise<boolean>;
   interrupt(): Promise<void>;
   renameThread(threadId: string, name: string): Promise<void>;
   deleteThread(threadId: string): Promise<void>;
@@ -39,8 +40,8 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
   const now = options.now ?? Date.now;
   const newId = options.newId ?? (() => crypto.randomUUID());
 
-  const notify = (level: "info" | "error", message: string, threadId: string | null = null): void => {
-    store.dispatch({ type: "notice/pushed", notice: { id: newId(), level, message, threadId } });
+  const notify = (level: "info" | "error", message: string, threadId: string | null = null, code?: NoticeCode): void => {
+    store.dispatch({ type: "notice/pushed", notice: { id: newId(), level, message, threadId, ...(code === undefined ? {} : { code }) } });
   };
   const fail = (error: unknown, threadId: string | null = null): void => notify("error", errorMessage(error), threadId);
   const guarded = async (work: () => Promise<void>, threadId: string | null = null): Promise<void> => {
@@ -154,17 +155,20 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
       const state = store.getState();
       const threadId = state.activeThreadId;
       if (threadId === null) {
-        notify("error", "Open or start a session before sending a message.");
-        return;
+        notify("error", "Open or start a session before sending a message.", null, "noActiveThread");
+        return false;
       }
       const conversation = state.conversations[threadId];
       const activeTurnId = conversation?.activeTurnId ?? null;
       if (activeTurnId !== null) {
-        await guarded(async () => {
+        try {
           await bridge.request("turn/steer", { threadId, expectedTurnId: activeTurnId, input: textInput(text) });
-          notify("info", "Message sent to the running turn.", threadId);
-        }, threadId);
-        return;
+          notify("info", "Message sent to the running turn.", threadId, "steered");
+          return true;
+        } catch (error) {
+          fail(error, threadId);
+          return false;
+        }
       }
       const clientId = newId();
       try {
@@ -181,8 +185,10 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
           ...(modelId === null ? {} : { model: modelId }),
           ...(effort === null ? {} : { effort }),
         });
+        return true;
       } catch (error) {
         store.dispatch({ type: "user/messageFailed", threadId, clientId, message: errorMessage(error) });
+        return false;
       }
     },
 

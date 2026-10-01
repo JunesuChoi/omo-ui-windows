@@ -5,6 +5,7 @@ import { ActionsContext, StoreContext, useAppSelector } from "./ui/app-context";
 import { Composer } from "./ui/composer/Composer";
 import { ConversationPane } from "./ui/conversation/ConversationPane";
 import { useNewSessionFlow } from "./ui/new-session";
+import { NoticeToasts } from "./ui/notices/NoticeToasts";
 import { ConnectionBanner } from "./ui/onboarding/ConnectionBanner";
 import { Onboarding } from "./ui/onboarding/Onboarding";
 import { SettingsDialog } from "./ui/settings/SettingsDialog";
@@ -52,7 +53,14 @@ function Shell() {
     [newSession],
   );
 
-  if (bridgeState === "not-found") return <Onboarding />;
+  if (bridgeState === "not-found") {
+    return (
+      <>
+        <Onboarding />
+        <NoticeToasts />
+      </>
+    );
+  }
   return (
     <>
       <AppFrame
@@ -63,6 +71,7 @@ function Shell() {
         onSidebarWidthChange={uiState.setSidebarWidth}
       />
       <SettingsDialog />
+      <NoticeToasts />
     </>
   );
 }
