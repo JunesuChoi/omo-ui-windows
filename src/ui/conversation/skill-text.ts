@@ -82,3 +82,28 @@ export function projectSkillUserText(text: string): { skills: UserTextSkill[]; r
   }
   return { skills, rest, context };
 }
+
+const quotedNames = (text: string): string[] => [...text.matchAll(/"([\w-]+)"/g)].flatMap((match) => match[1] ?? []);
+const envelopeNames = (text: string): string[] => [...text.matchAll(/<skill name="([\w-]+)"/g)].flatMap((match) => match[1] ?? []);
+
+/**
+ * One-line thread title text: invoked skills as `/name` tokens followed by the first line of the
+ * user's own text, with omo's injected instructions and context dropped. Thread previews may be
+ * cut short, so an unclosed invocation still yields its skill names and whatever request text follows.
+ */
+export function projectTitleText(text: string): string {
+  const { skills, rest } = projectSkillUserText(text);
+  let names = skills.map((skill) => skill.name);
+  let body = rest;
+  if (names.length === 0 && rest.startsWith("The user explicitly invoked ")) {
+    names = quotedNames(rest.split("\n", 1)[0] ?? "");
+    body = /<user-request>([\s\S]*?)(?:<\/user-request>|$)/.exec(rest)?.[1] ?? "";
+  } else if (names.length === 0 && rest.startsWith('<skill name="')) {
+    names = envelopeNames(rest);
+    const end = rest.lastIndexOf("</skill>");
+    body = end === -1 ? "" : rest.slice(end + "</skill>".length);
+  }
+  const lines = body.split("\n").map((line) => line.trim());
+  const line = (names.length > 0 ? lines.find((candidate) => candidate !== "" && !candidate.startsWith("<")) : lines.find((candidate) => candidate !== "")) ?? "";
+  return [...new Set(names)].map((name) => `/${name}`).concat(line === "" ? [] : [line]).join(" ");
+}

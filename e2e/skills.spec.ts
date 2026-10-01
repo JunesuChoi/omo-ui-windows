@@ -211,6 +211,9 @@ test("relaunch restores expanded skill history but not its hidden pointer", asyn
   await expect(row).toBeVisible();
   await row.getByRole("button").first().click();
   await expect(row).toHaveAttribute("aria-current", "page");
+  await expect(row).toContainText("/ulw-loop /mass-ulw");
+  await expect(row).not.toContainText("The user explicitly invoked");
+  await expect(byTestId(restored, TESTID.conversationHeader)).toContainText("/ulw-loop /mass-ulw");
   const bubble = byTestId(restored, TESTID.userMessage);
   await expect(bubble).toHaveCount(1);
   const chips = bubble.locator(`[data-testid="${TESTID.skillChip}"]`);

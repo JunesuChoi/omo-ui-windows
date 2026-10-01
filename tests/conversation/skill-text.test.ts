@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { projectSkillUserText } from "../../src/ui/conversation/skill-text";
+import { projectSkillUserText, projectTitleText } from "../../src/ui/conversation/skill-text";
 
 const envelope = (name: string, body = "instructions", location = `/skills/${name}/SKILL.md`) =>
   `<skill name="${name}" location="${location}">\n${body}\n</skill>`;
@@ -166,5 +166,30 @@ describe("projectSkillUserText", () => {
     invocation(["alpha"], "Task").replace('location="/synthetic/alpha/SKILL.md"', ""),
   ])("preserves malformed or nontrailing injections: %s", (text) => {
     expect(projectSkillUserText(text)).toEqual({ skills: [], rest: text, context: [] });
+  });
+});
+
+describe("projectTitleText", () => {
+  it("keeps the first non-blank line of plain text", () => {
+    expect(projectTitleText("\n  fix the build  \nmore")).toBe("fix the build");
+  });
+  it("titles a complete plugin invocation with its skills and request", () => {
+    const text = 'The user explicitly invoked the "ulw-loop" skill. Follow the instructions in <skill-instruction> as binding.\n\n<skill-instruction name="ulw-loop" location="/s/ulw-loop/SKILL.md">Run.</skill-instruction>\n\n<user-request>build the thing\nmore</user-request>';
+    expect(projectTitleText(text)).toBe("/ulw-loop build the thing");
+  });
+  it("titles a truncated plugin invocation from its preamble", () => {
+    expect(projectTitleText('The user explicitly invoked the "ulw-loop" and "mass-ulw" skills. Follow the instructions in <skill-instruction> as bind')).toBe("/ulw-loop /mass-ulw");
+  });
+  it("titles a truncated envelope preview by its skill names", () => {
+    expect(projectTitleText('<skill name="ulw-loop" location="/s/ulw-loop/SKILL.md">\nReferences are rela')).toBe("/ulw-loop");
+  });
+  it("drops trailing omo context from the title", () => {
+    expect(projectTitleText("deploy now\n<omo-ultrawork-reminder>armed</omo-ultrawork-reminder>")).toBe("deploy now");
+  });
+  it("titles canonical tokens with their text", () => {
+    expect(projectTitleText("/skill:ulw-loop /skill:mass-ulw do X")).toBe("/ulw-loop /mass-ulw do X");
+  });
+  it("returns an empty string for empty text", () => {
+    expect(projectTitleText("")).toBe("");
   });
 });

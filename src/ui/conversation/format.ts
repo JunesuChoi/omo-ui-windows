@@ -1,6 +1,7 @@
 import { relativizeToCwd, workspaceTitleOf } from "@deepseek-ai/dsh-util-workspace-path";
 import type { Translate } from "../../i18n";
 import type { ThreadSummary } from "../../state";
+import { projectTitleText } from "./skill-text";
 
 export function firstLine(text: string): string {
   const newline = text.indexOf("\n");
@@ -11,10 +12,11 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** Thread title: the name, else the preview, each projected by projectTitleText; else `fallback`. */
 export function threadTitle(thread: ThreadSummary | null, fallback: string): string {
-  const name = thread?.name?.trim() ?? "";
+  const name = projectTitleText(thread?.name ?? "");
   if (name !== "") return name;
-  const preview = firstLine(thread?.preview ?? "");
+  const preview = projectTitleText(thread?.preview ?? "");
   return preview === "" ? fallback : preview;
 }
 

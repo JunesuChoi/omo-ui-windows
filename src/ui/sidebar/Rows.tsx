@@ -19,16 +19,9 @@ import {
 import type { MenuEntry } from "@deepseek-ai/dsh-client-ui-primitives";
 import type { ThreadSummary, WorkspaceGroup } from "../../state";
 import { useT } from "../../i18n";
+import { threadTitle } from "../conversation/format";
 import { TESTID } from "../testids";
 import css from "./Rows.module.css";
-
-/** Row title: the thread name, else the first non-blank preview line, else `fallback`. */
-export function threadTitle(thread: ThreadSummary, fallback: string): string {
-  const name = thread.name?.trim() ?? "";
-  if (name !== "") return name;
-  const line = thread.preview.split("\n").find((candidate) => candidate.trim() !== "");
-  return line === undefined ? fallback : line.trim();
-}
 
 interface WorkspaceRowProps {
   group: WorkspaceGroup;
