@@ -17,6 +17,8 @@ export const TESTID = {
   skillChip: "skill-chip",
   skillBody: "skill-body",
   skillBodyToggle: "skill-body-toggle",
+  omoContextToggle: "omo-context-toggle",
+  omoContext: "omo-context",
   assistantMessage: "assistant-message",
   reasoning: "reasoning",
   toolCard: "tool-card",

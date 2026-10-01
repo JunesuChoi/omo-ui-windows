@@ -58,9 +58,18 @@ export const UserBubble = memo(function UserBubble({
   sending?: boolean;
 }) {
   const t = useT();
-  const { skills, rest } = projectSkillUserText(text);
+  const { skills, rest, context } = projectSkillUserText(text);
   const [showInstructions, setShowInstructions] = useState(false);
+  const [showContext, setShowContext] = useState(false);
   const instructionsId = useId();
+  const contextId = useId();
+  const contextLabels = {
+    "omo-ultrawork-reminder": t("conversation.context.ultrawork"),
+    "omo-ulw-loop-pointer": t("conversation.context.loopPointer"),
+    "omo-mass-ulw-pointer": t("conversation.context.massPointer"),
+    "omo-senpi-ulw-loop": t("conversation.context.loopRun"),
+    "system-reminder": t("conversation.context.system"),
+  };
   const hasInstructions = skills.some((skill) => skill.body !== null);
   return (
     <div
@@ -96,6 +105,32 @@ export const UserBubble = memo(function UserBubble({
               </div>
             )}
             {rest}
+            {context.length > 0 && (
+              <div className={css.instructions}>
+                <button
+                  type="button"
+                  className={`${chipCss.refChip} ${css.contextToggle}`}
+                  data-testid={TESTID.omoContextToggle}
+                  aria-expanded={showContext}
+                  aria-controls={contextId}
+                  onClick={() => setShowContext((shown) => !shown)}
+                >
+                  {t("conversation.context.label")}{context.length > 1 ? ` (${context.length})` : ""}
+                </button>
+                <div id={contextId} hidden={!showContext} className={css.instructionsPanel} data-testid={TESTID.omoContext}>
+                  {context.map((block, index) => (
+                    <section key={`${block.tag}:${index}`}>
+                      <div className={css.instructionName}>
+                        {Object.hasOwn(contextLabels, block.tag)
+                          ? contextLabels[block.tag as keyof typeof contextLabels]
+                          : block.tag}
+                      </div>
+                      <pre className={css.instructionBody}>{block.body}</pre>
+                    </section>
+                  ))}
+                </div>
+              </div>
+            )}
             {hasInstructions && (
               <div className={css.instructions}>
                 <button

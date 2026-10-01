@@ -225,12 +225,28 @@ test("relaunch restores expanded skill history but not its hidden pointer", asyn
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
   await expect(bodies).toHaveCount(2);
   for (const body of await bodies.all()) await expect(body).toBeHidden();
+  const contextToggle = byTestId(restored, TESTID.omoContextToggle);
+  const context = byTestId(restored, TESTID.omoContext);
+  await expect(contextToggle).toHaveText("omo context (2)");
+  await expect(contextToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(context).toBeHidden();
+  expect(await bubble.innerText()).not.toMatch(/<omo-|<skill-instruction/);
+  await shot(restored, "C002-omo-context");
   await shot(restored, "C002-restored");
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-expanded", "true");
   await expect(bodies.nth(0)).toContainText("Run the loop.");
   await expect(bodies.nth(1)).toContainText("Dispatch the workflow.");
   for (const body of await bodies.all()) await expect(body).toBeVisible();
+  expect(await bubble.innerText()).toContain("<skill-instruction");
+  await contextToggle.click();
+  await expect(contextToggle).toHaveAttribute("aria-expanded", "true");
+  await expect(context).toBeVisible();
+  await expect(context).toContainText("ulw-loop pointer");
+  await expect(context).toContainText("System reminder");
+  await expect(context).toContainText("Keep the synthetic context.");
+  expect(await bubble.innerText()).toContain("<omo-");
+  await shot(restored, "C002-omo-context-expanded");
   await shot(restored, "C002-expanded");
 });
 

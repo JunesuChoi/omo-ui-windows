@@ -494,9 +494,15 @@ async function runTurn(record, turn, input, clientId) {
   startItem(turn, { type: "userMessage", id: nextItemId(turn), clientId: clientId ?? null, content: input });
   finishItem(turn, turn.wire.items[0]);
   if (record.thread.preview === "") record.thread.preview = text;
-  recordEntry(record, userEntry(expandSkills(
-    text === "SCENARIO:skills-history" ? "/skill:ulw-loop /skill:mass-ulw build the thing" : text,
-  )));
+  const storedText = text === "SCENARIO:skills-history"
+    ? 'The user explicitly invoked the "ulw-loop" and "mass-ulw" skills. Follow the instructions in <skill-instruction> as binding for this request, while respecting higher-priority instructions.\n\n'
+      + '<skill-instruction name="ulw-loop" location="/fake/skills/ulw-loop/SKILL.md">Run the loop. Literal <skill-instruction example> stays text.</skill-instruction>\n\n'
+      + '<skill-instruction name="mass-ulw" location="/fake/skills/mass-ulw/SKILL.md">Dispatch the workflow.</skill-instruction>\n\n'
+      + '<user-request>build the thing</user-request>\n'
+      + '<omo-ulw-loop-pointer>Follow the synthetic loop. Literal <omo-example stays text.</omo-ulw-loop-pointer>\n'
+      + '<system-reminder>Keep the synthetic context.</system-reminder>'
+    : expandSkills(text);
+  recordEntry(record, userEntry(storedText));
 
   try {
     await runScenario(record, turn, text);

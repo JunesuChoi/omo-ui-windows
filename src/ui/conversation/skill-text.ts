@@ -4,12 +4,64 @@ export interface UserTextSkill {
   body: string | null;
 }
 
-/** Projects only leading canonical commands or recorded envelopes; callers retain the raw text for copy/export. */
-export function projectSkillUserText(text: string): { skills: UserTextSkill[]; rest: string } {
+export interface UserTextContext {
+  tag: string;
+  body: string;
+}
+
+function projectContext(text: string): { rest: string; context: UserTextContext[] } {
+  const context: UserTextContext[] = [];
+  let rest = text;
+  const stack: { tag: string; start: number; bodyStart: number }[] = [];
+  const blocks: { tag: string; body: string; start: number; end: number }[] = [];
+  for (const token of text.matchAll(/<(\/?)(omo-[a-z0-9-]+|system-reminder)>/g)) {
+    const tag = token[2];
+    if (tag === undefined) continue;
+    if (token[1] === "") {
+      stack.push({ tag, start: token.index, bodyStart: token.index + token[0].length });
+    } else {
+      const opening = stack.pop();
+      if (opening?.tag !== tag) {
+        stack.length = 0;
+        continue;
+      }
+      if (stack.length === 0 && (opening.start === 0 || text[opening.start - 1] === "\n")) {
+        blocks.push({ tag, body: text.slice(opening.bodyStart, token.index), start: opening.start, end: token.index + token[0].length });
+      }
+    }
+  }
+  for (const block of blocks.reverse()) {
+    if (block.end !== rest.replace(/\n+$/, "").length) break;
+    context.unshift({ tag: block.tag, body: block.body });
+    rest = rest.slice(0, block.start).replace(/\n+$/, "");
+  }
+  return { rest, context };
+}
+
+/** Projects recorded injections for display; callers retain the raw text for copy/export. */
+export function projectSkillUserText(text: string): { skills: UserTextSkill[]; rest: string; context: UserTextContext[] } {
+  const { context, rest: userText } = projectContext(text);
+  let rest = userText;
+  const invocation = /^The user explicitly invoked [^\r\n]+\n\n/.exec(rest);
+  if (invocation !== null) {
+    let remaining = rest.slice(invocation[0].length);
+    const instructions: UserTextSkill[] = [];
+    while (remaining.startsWith("<skill-instruction ")) {
+      const match = /^<skill-instruction name="([\w-]+)" location="([^"\r\n]+)">((?:(?!<skill-instruction name=)[\s\S])*?)<\/skill-instruction>\n\n/.exec(remaining);
+      if (match === null || match[1] === undefined || match[2] === undefined || match[3] === undefined) break;
+      instructions.push({ name: match[1], location: match[2], body: match[3] });
+      remaining = remaining.slice(match[0].length);
+    }
+    const request = /^<user-request>([\s\S]*?)<\/user-request>$/.exec(remaining);
+    if (instructions.length > 0 && request?.[1] !== undefined) {
+      const projected = projectContext(request[1]);
+      return { skills: instructions, rest: projected.rest, context: [...projected.context, ...context] };
+    }
+  }
+
   const skills: UserTextSkill[] = [];
   const names = new Set<string>();
-  const expanded = text.startsWith("<skill ");
-  let rest = text;
+  const expanded = rest.startsWith("<skill ");
   while (rest !== "") {
     const match = expanded
       ? /^<skill name="([\w-]+)" location="([^"\r\n]+)">\n((?:(?!<skill name=)[\s\S])*?)\n<\/skill>(?=\n[ \t]*\n|$)/.exec(rest)
@@ -28,5 +80,5 @@ export function projectSkillUserText(text: string): { skills: UserTextSkill[]; r
       rest = rest.replace(/^\s+/, "");
     }
   }
-  return { skills, rest };
+  return { skills, rest, context };
 }
