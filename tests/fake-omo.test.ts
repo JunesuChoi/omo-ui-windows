@@ -253,6 +253,10 @@ describe("fake omo binary", () => {
     ] }]);
     const history = parseSessionJsonl(await readFile(join(box.home, "sessions", `${threadId}.jsonl`), "utf8"));
     expect(history.todo?.phases).toMatchObject([{ name: "Implementation" }, { name: "Verification", tasks: [{ status: "abandoned" }, { status: "pending" }] }]);
+    expect(history.tasks).toMatchObject([
+      { task_id: "task-A", status: "completed", final_response: "A completed", model: "fake/alpha", source: "history" },
+      { task_id: "task-B", status: "error", error_message: "402: Insufficient Balance", model: "fake/alpha", source: "history" },
+    ]);
     expect(client.frames.find((frame) => frame.method === "item/completed" && at(frame, "params", "item", "tool") === "todo")).toBeDefined();
     let state = createInitialState();
     for (const frame of client.frames) {

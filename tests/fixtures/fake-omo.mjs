@@ -175,13 +175,14 @@ const assistantEntry = (content, stopReason) => ({
   },
 });
 
-const toolResultEntry = (toolCallId, toolName, text, isError) => ({
+const toolResultEntry = (toolCallId, toolName, text, isError, details) => ({
   type: "message",
   message: {
     role: "toolResult",
     toolCallId,
     toolName,
     content: [{ type: "text", text }],
+    ...(details === undefined ? {} : { details }),
     isError,
     timestamp: Date.now(),
   },
@@ -455,6 +456,30 @@ function runScenario(record, turn, text) {
   return runEcho(record, turn, text);
 }
 
+/** Records a background task spawn the way omo does: a task tool call whose result details carry the spawn receipt. */
+function recordTaskSpawn(record, turn, id) {
+  const receipt = {
+    task_id: `task-${id}`, run_epoch: 0, status: "running", mode: "spawn", task_summary: `Execute ${id}`, name: `Lane ${id}`,
+    category: "quick", execution_mode: "in-process", run_in_background: true,
+    resolved_model: { source: "category", provider: "fake", model_id: "alpha", display: "fake/alpha" },
+  };
+  const text = `Started task Lane ${id} (task-${id}, running).`;
+  const tool = { type: "dynamicToolCall", id: nextItemId(turn), namespace: null, tool: "task", arguments: { category: "quick", prompt: `Execute ${id}`, run_in_background: true }, status: "inProgress", contentItems: null, success: null, durationMs: null };
+  startItem(turn, tool);
+  recordEntry(record, assistantEntry([{ type: "toolCall", id: tool.id, name: "task", arguments: tool.arguments }], "toolUse"));
+  recordEntry(record, toolResultEntry(tool.id, "task", text, false, receipt));
+  Object.assign(tool, { status: "completed", success: true, contentItems: [{ type: "inputText", text }], durationMs: 0 });
+  finishItem(turn, tool);
+}
+
+/** Records the wake message omo appends when a background task settles; its details carry the completion record. */
+function recordTaskCompletion(record, completion) {
+  recordEntry(record, {
+    type: "custom_message", customType: "omo-senpi:wake", content: `Task ${completion.task_id} ${completion.status}`, display: false,
+    details: [{ customType: "senpi-task.completion", details: [completion] }],
+  });
+}
+
 function emitLiveStage(record, turn, stage) {
   const threadId = record.thread.id;
   const at = new Date().toISOString();
@@ -486,9 +511,12 @@ function emitLiveStage(record, turn, stage) {
   if (stage === 1) {
     record.goal = { threadId, objective: "Ship the OmO UI app", status: "active", tokenBudget: null, tokensUsed: 0, timeUsedSeconds: 0, createdAt: nowSec(), updatedAt: nowSec() };
     notify("thread/goal/updated", { threadId, turnId: null, goal: record.goal });
+    recordTaskSpawn(record, turn, "A");
   }
-  if (stage === 2) extension("omo.dag.activity", { schemaVersion: 1, runId: "mass-ulw-display", nodeId: "B", taskId: "task-B", at, activity: "implementing", currentTool: "edit", turns: 2, toolCalls: 3 });
-  if (stage === 3) {
+  if (stage === 2) {
+    extension("omo.dag.activity", { schemaVersion: 1, runId: "mass-ulw-display", nodeId: "B", taskId: "task-B", at, activity: "implementing", currentTool: "edit", turns: 2, toolCalls: 3 });
+    recordTaskCompletion(record, { task_id: "task-A", status: "completed", name: "Lane A", model: "fake/alpha", final_response: "A completed" });
+    recordTaskSpawn(record, turn, "B");
     const tool = { type: "dynamicToolCall", id: nextItemId(turn), namespace: null, tool: "todo", arguments: { op: "init" }, status: "inProgress", contentItems: null, success: null, durationMs: null };
     startItem(turn, tool);
     recordEntry(record, assistantEntry([{ type: "toolCall", id: tool.id, name: "todo", arguments: tool.arguments }], "toolUse"));
@@ -502,6 +530,9 @@ function emitLiveStage(record, turn, stage) {
     tool.contentItems = [{ type: "inputText", text: "Todo saved" }];
     tool.durationMs = 0;
     finishItem(turn, tool);
+  }
+  if (stage === 3) {
+    recordTaskCompletion(record, { task_id: "task-B", status: "error", name: "Lane B", model: "fake/alpha", error_message: "402: Insufficient Balance" });
     record.goal = null;
     notify("thread/goal/cleared", { threadId });
   }
