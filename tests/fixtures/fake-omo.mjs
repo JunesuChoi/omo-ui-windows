@@ -536,11 +536,26 @@ function steerTurn(id, params) {
   recordEntry(threads.get(threadId), userEntry(firstText(input)));
 }
 
+function waitForFile(file, done) {
+  if (existsSync(file)) {
+    done();
+    return;
+  }
+  const timer = setTimeout(() => {
+    timers.delete(timer);
+    waitForFile(file, done);
+  }, 50);
+  timers.add(timer);
+}
+
 function handleRequest(id, method, params) {
   if (method === "initialize") {
     if (initialized) throw new RpcFailure(SERVER_ERROR, "Already initialized");
     initialized = true;
-    respond(id, { userAgent: "fake-omo/5.1.4", codexHome: home, platformFamily: "unix", platformOs: "macos" });
+    const result = { userAgent: "fake-omo/5.1.4", codexHome: home, platformFamily: "unix", platformOs: "macos" };
+    const gate = process.env.FAKE_OMO_INIT_GATE;
+    if (gate) waitForFile(gate, () => respond(id, result));
+    else respond(id, result);
     return;
   }
   if (!initialized) throw new RpcFailure(SERVER_ERROR, "Not initialized");
@@ -592,6 +607,9 @@ function handleRequest(id, method, params) {
       return;
     }
     case "turn/start":
+      if (firstText(Array.isArray(params.input) ? params.input : []).includes("SCENARIO:fail")) {
+        throw new RpcFailure(SERVER_ERROR, "Simulated turn failure");
+      }
       startTurn(id, params);
       return;
     case "turn/steer":
