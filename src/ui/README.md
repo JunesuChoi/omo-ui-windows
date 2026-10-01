@@ -1,6 +1,6 @@
 # src/ui — app shell and lane slots
 
-`src/App.tsx` builds the store and actions once, connects the bridge, loads preferences, applies theme and locale, and renders either `<Onboarding/>` (bridge state `not-found`) or `<AppFrame sidebar={<Sidebar/>} main={<ConnectionBanner/> + <ConversationPane/> + <Composer/>}/>` plus `<SettingsDialog/>`. The six slot components are functional stubs with their final export names; each lane replaces the files in its own directory.
+`src/App.tsx` builds the store and actions once, connects the bridge, loads preferences, applies theme and locale, and renders either `<Onboarding/>` (bridge state `not-found`) or `<AppFrame sidebar={<Sidebar/>} main={<ConnectionBanner/> + <ConversationPane/> + <Composer/>}/>` plus `<SettingsDialog/>`. Each slot component lives in its own directory:
 
 | Directory | Lane | Export |
 | --- | --- | --- |
