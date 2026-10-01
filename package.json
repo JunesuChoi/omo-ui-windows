@@ -22,6 +22,9 @@
     "smoke:bridge": "node scripts/build-electron.mjs && node dist-electron/smoke-bridge.cjs",
     "test:e2e": "npm run build && playwright test e2e/fake.spec.ts e2e/notices.spec.ts",
     "test:e2e:real": "npm run build && OMO_UI_E2E_REAL=1 playwright test e2e/real.spec.ts",
+    "package:mac": "npm run build && electron-builder --mac --arm64",
+    "package:mac:dir": "npm run build && electron-builder --mac --arm64 --dir",
+    "install:app": "bash scripts/install-app.sh",
     "icon": "node scripts/render-icon.mjs",
     "postinstall": "node node_modules/electron/install.js"
   },
