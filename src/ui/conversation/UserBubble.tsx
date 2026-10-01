@@ -1,9 +1,11 @@
-import { memo, useState } from "react";
+import { memo, useId, useState } from "react";
+import chipCss from "@deepseek-ai/dsh-client-ui-primitives/src/user-text.module.css";
 import type { UserInput } from "../../../shared/protocol";
 import { useT } from "../../i18n";
 import { TESTID } from "../testids";
 import a11y from "./a11y.module.css";
 import css from "./UserBubble.module.css";
+import { projectSkillUserText } from "./skill-text";
 
 export interface UserImage {
   key: string;
@@ -56,6 +58,10 @@ export const UserBubble = memo(function UserBubble({
   sending?: boolean;
 }) {
   const t = useT();
+  const { skills, rest } = projectSkillUserText(text);
+  const [showInstructions, setShowInstructions] = useState(false);
+  const instructionsId = useId();
+  const hasInstructions = skills.some((skill) => skill.body !== null);
   return (
     <div
       className={css.row}
@@ -72,7 +78,49 @@ export const UserBubble = memo(function UserBubble({
             ))}
           </div>
         )}
-        {text !== "" && <div className={css.bubble}>{text}</div>}
+        {text !== "" && (
+          <div className={css.bubble}>
+            {skills.length > 0 && (
+              <div className={css.skills}>
+                {skills.map((skill) => (
+                  <span
+                    key={skill.name}
+                    className={`${chipCss.refChip} ${chipCss.slashChip}`}
+                    data-testid={TESTID.skillChip}
+                    data-ref-chip="skill"
+                    title={skill.location ?? `/skill:${skill.name}`}
+                  >
+                    {t("conversation.skill.label")} /{skill.name}
+                  </span>
+                ))}
+              </div>
+            )}
+            {rest}
+            {hasInstructions && (
+              <div className={css.instructions}>
+                <button
+                  type="button"
+                  className={css.instructionsToggle}
+                  data-testid={TESTID.skillBodyToggle}
+                  aria-expanded={showInstructions}
+                  aria-controls={instructionsId}
+                  onClick={() => setShowInstructions((shown) => !shown)}
+                >
+                  {t(showInstructions ? "conversation.skill.hideInstructions" : "conversation.skill.showInstructions")}
+                </button>
+                <div id={instructionsId} hidden={!showInstructions} className={css.instructionsPanel}>
+                  {skills.filter((skill) => skill.body !== null).map((skill) => (
+                    <section key={skill.name} data-testid={TESTID.skillBody}>
+                      <div className={css.instructionName}>{skill.name}</div>
+                      <div className={css.instructionLocation}>{skill.location}</div>
+                      <pre className={css.instructionBody}>{skill.body}</pre>
+                    </section>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         {sending && <span className={a11y.visuallyHidden}>{t("conversation.user.sending")}</span>}
       </div>
     </div>

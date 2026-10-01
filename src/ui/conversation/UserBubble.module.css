@@ -32,6 +32,68 @@
   opacity: 0.6;
 }
 
+.skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-bottom: 4px;
+}
+
+.instructions {
+  margin-top: 8px;
+  white-space: normal;
+}
+
+.instructionsToggle {
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.instructionsToggle:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.instructionsToggle:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+  border-radius: var(--dsw-radius-sm);
+}
+
+.instructionsPanel {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.instructionsPanel section + section {
+  margin-top: 12px;
+}
+
+.instructionName {
+  font-weight: 500;
+}
+
+.instructionLocation {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.instructionBody {
+  margin: 8px 0 0;
+  font-family: var(--dsw-font-markdown-code-font-family);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .attachments {
   display: flex;
   flex-wrap: wrap;
