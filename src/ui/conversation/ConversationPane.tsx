@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import {
   Button,
@@ -14,6 +14,7 @@ import type { Conversation, ConversationTurn, PendingRequest } from "../../state
 import { selectActiveConversation, selectIsTurnActive, selectPendingRequestsForThread } from "../../state";
 import { useActions, useAppSelector } from "../app-context";
 import { TESTID } from "../testids";
+import { ActivityPanel, ActivityToggle } from "./ActivityPanel";
 import { ApprovalCard } from "./ApprovalCard";
 import { ConversationHeader } from "./ConversationHeader";
 import { EmptyHero } from "./EmptyHero";
@@ -160,9 +161,28 @@ export function ConversationPane() {
     state.activeThreadId === null ? null : (state.threads[state.activeThreadId] ?? null),
   );
   const turnActive = useAppSelector(selectIsTurnActive);
+  const activityId = useId();
+  const [activityOpen, setActivityOpen] = useState<ReadonlySet<string>>(() => new Set());
+  const showActivity = threadId !== null && activityOpen.has(threadId);
+  const toggleActivity = useCallback(() => {
+    if (threadId === null) return;
+    setActivityOpen((current) => {
+      const next = new Set(current);
+      if (!next.delete(threadId)) next.add(threadId);
+      return next;
+    });
+  }, [threadId]);
+  const activity = useMemo(
+    () =>
+      threadId === null ? null : (
+        <ActivityToggle threadId={threadId} open={showActivity} controlsId={activityId} onToggle={toggleActivity} />
+      ),
+    [threadId, showActivity, activityId, toggleActivity],
+  );
   return (
     <section className={css.root} data-testid={TESTID.conversation}>
-      <ConversationHeader active={threadId !== null} thread={thread} running={turnActive} />
+      <ConversationHeader active={threadId !== null} thread={thread} running={turnActive} activity={activity} />
+      {threadId !== null && showActivity && <ActivityPanel threadId={threadId} id={activityId} />}
       {threadId === null ? (
         <EmptyHero />
       ) : (

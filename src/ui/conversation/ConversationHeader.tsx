@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, type ReactNode } from "react";
 import { IconFolderOpenRegular, StateDot, TextShimmer } from "@deepseek-ai/dsh-client-ui-primitives";
 import { useT } from "../../i18n";
 import type { ThreadSummary } from "../../state";
@@ -6,15 +6,17 @@ import { TESTID } from "../testids";
 import { threadTitle, workspaceName } from "./format";
 import css from "./ConversationHeader.module.css";
 
-/** Window-drag header strip: thread title, the workspace chip (reveals the folder in Finder) and the running state. */
+/** Window-drag header strip: thread title, the workspace chip (reveals the folder in Finder), the activity chip and the running state. */
 export const ConversationHeader = memo(function ConversationHeader({
   active,
   thread,
   running,
+  activity,
 }: {
   active: boolean;
   thread: ThreadSummary | null;
   running: boolean;
+  activity?: ReactNode;
 }) {
   const t = useT();
   if (!active) {
@@ -39,12 +41,15 @@ export const ConversationHeader = memo(function ConversationHeader({
           <span className={css.workspaceLabel}>{workspaceName(cwd)}</span>
         </button>
       )}
-      {running && (
-        <span className={css.running} role="status">
-          <StateDot state="ongoing" size={12} />
-          <TextShimmer active>{t("conversation.header.running")}</TextShimmer>
-        </span>
-      )}
+      <div className={css.trailing}>
+        {activity}
+        {running && (
+          <span className={css.running} role="status">
+            <StateDot state="ongoing" size={12} />
+            <TextShimmer active>{t("conversation.header.running")}</TextShimmer>
+          </span>
+        )}
+      </div>
     </header>
   );
 });

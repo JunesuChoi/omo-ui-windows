@@ -62,12 +62,19 @@
   white-space: nowrap;
 }
 
+.trailing {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
 .running {
   flex: none;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-left: auto;
   color: var(--dsw-alias-label-deep-diving);
   font-size: 12px;
   line-height: 18px;

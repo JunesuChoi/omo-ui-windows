@@ -8,10 +8,11 @@
   --dsh-chat-content-width: 728px;
 }
 
+/* The floor makes the activity panel above, not the transcript, absorb a short window. */
 .body {
   position: relative;
   flex: 1;
-  min-height: 0;
+  min-height: 96px;
   display: flex;
   flex-direction: column;
 }

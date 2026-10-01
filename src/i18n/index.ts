@@ -1,5 +1,6 @@
 import { createContext, createElement, useContext, useMemo, type ReactNode } from "react";
 import type { LocalePreference } from "../../shared/ipc";
+import { messages as activity } from "./activity";
 import { messages as common } from "./common";
 import { messages as composer } from "./composer";
 import { messages as conversation } from "./conversation";
@@ -20,10 +21,10 @@ function aligned<D extends Dictionary>(dictionary: Aligned<D>): D {
   return dictionary;
 }
 
-const DICTIONARIES = [aligned(common), aligned(shell), aligned(conversation), aligned(composer)] as const;
+const DICTIONARIES = [aligned(common), aligned(shell), aligned(conversation), aligned(composer), aligned(activity)] as const;
 
-const EN = { ...common.en, ...shell.en, ...conversation.en, ...composer.en } as const;
-const KO = { ...common.ko, ...shell.ko, ...conversation.ko, ...composer.ko } as const;
+const EN = { ...common.en, ...shell.en, ...conversation.en, ...composer.en, ...activity.en } as const;
+const KO = { ...common.ko, ...shell.ko, ...conversation.ko, ...composer.ko, ...activity.ko } as const;
 
 export type MessageKey = keyof typeof EN;
 

@@ -6,6 +6,7 @@ import { selectIsTurnActive, selectSkillCatalog } from "../../state";
 import type { AppState, SkillCatalog } from "../../state";
 import { useT } from "../../i18n";
 import { useActions, useAppSelector } from "../app-context";
+import { ConversationDock } from "../conversation/ConversationDock";
 import { TESTID } from "../testids";
 import { updatePreferences, useUiState } from "../ui-state";
 import { ModelPicker } from "./ModelPicker";
@@ -265,6 +266,7 @@ export function Composer() {
 
   return (
     <div className={css.root}>
+      <ConversationDock />
       <div className={clsx(css.card, !connected && css.cardDisabled)} data-testid={TESTID.composer} data-composer-card="">
         {menuOpen && (
           <SkillMenu
