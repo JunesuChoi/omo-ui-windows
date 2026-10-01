@@ -13,8 +13,11 @@ import type {
   TurnStatus,
 } from "./protocol";
 
-/** The official installer command shown on onboarding and executed by `install()`. */
-export const OMO_INSTALL_COMMAND = "curl -fsSL https://get.omo.dev/install.sh | bash";
+/** URL of the official omo installer script. */
+export const OMO_INSTALL_SCRIPT_URL = "https://get.omo.dev/install.sh";
+
+/** The official installer command shown on onboarding and in Settings; `install()` runs the same script from a file. */
+export const OMO_INSTALL_COMMAND = `curl -fsSL ${OMO_INSTALL_SCRIPT_URL} | bash` as const;
 
 export type BridgeState = "locating" | "not-found" | "starting" | "connected" | "exited" | "restarting" | "stopped";
 
@@ -103,7 +106,7 @@ export interface OmoBridgeApi {
   respond(id: RequestId, result: unknown): Promise<void>;
   /** Re-locates omo and restarts the app-server child. */
   restart(): Promise<void>;
-  /** Runs OMO_INSTALL_COMMAND in a login shell, streams output through onInstallLog, and restarts the bridge on success. */
+  /** Downloads and runs the official installer script in a login shell, streams output through onInstallLog, and restarts the bridge on success. */
   install(): Promise<InstallResult>;
   onInstallLog(listener: (line: InstallLogLine) => void): () => void;
   /** Parses the session JSONL at sessionPath, which must resolve inside the omo sessions directory. */
