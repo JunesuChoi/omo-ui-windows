@@ -60,5 +60,7 @@ describe("result validation", () => {
     expect(isModel({ id: "m", displayName: "M", description: "", supportedReasoningEfforts: [null] })).toBe(false);
     expect(isSkill({ name: "x", description: "d", scope: "user", enabled: "yes" })).toBe(false);
     expect(isSkill(null)).toBe(false);
+    expect(isSkill({ name: "x", description: "d", scope: "user", enabled: true, interface: { shortDescription: 42 } })).toBe(false);
+    expect(isSkill({ name: "x", description: "d", scope: "user", enabled: true, interface: { displayName: "X", shortDescription: "s" } })).toBe(true);
   });
 });

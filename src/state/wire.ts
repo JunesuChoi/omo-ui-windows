@@ -123,6 +123,12 @@ export function parseItem(value: unknown): ThreadItem | null {
   return ITEM_FIELD_CHECKS[item.type](value) ? item : null;
 }
 
+const SKILL_INTERFACE_FIELDS = ["displayName", "shortDescription", "iconSmall", "iconLarge", "brandColor", "defaultPrompt"] as const;
+
+function isSkillInterface(value: unknown): boolean {
+  return isObject(value) && SKILL_INTERFACE_FIELDS.every((field) => value[field] === undefined || isString(value[field]));
+}
+
 /** Validates a skills/list skill; the skill menu reads these fields without further checks. */
 export function isSkill(value: unknown): value is SkillMetadata {
   return (
@@ -133,7 +139,7 @@ export function isSkill(value: unknown): value is SkillMetadata {
     typeof value["enabled"] === "boolean" &&
     (value["path"] === undefined || isString(value["path"])) &&
     (value["shortDescription"] === undefined || isString(value["shortDescription"])) &&
-    (value["interface"] === undefined || isObject(value["interface"]))
+    (value["interface"] === undefined || isSkillInterface(value["interface"]))
   );
 }
 
