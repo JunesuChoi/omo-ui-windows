@@ -1,0 +1,256 @@
+/* Ported from DSH ui-sidebar SidebarRoot.module.css, ui-workspace WorkspaceBrowser.module.css and
+   the ui-settings-general trigger row (MIT, Copyright (c) 2026 DeepSeek). */
+
+.root {
+  --dsh-sidebar-inline-padding: 12px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 0 var(--dsh-sidebar-inline-padding) 6px;
+  box-sizing: border-box;
+  background: var(--dsw-specific-sidebar-fill);
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+:global([data-platform='darwin']) .root {
+  background: transparent;
+}
+
+/* On macOS the strip's leading 84px clears the traffic lights at (16, 18); the 2px foot centres
+   the wordmark at y 25, level with them. */
+.header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: 52px;
+  box-sizing: border-box;
+  margin: 0 calc(-1 * var(--dsh-sidebar-inline-padding));
+  padding: 0 16px 2px 22px;
+}
+
+:global([data-platform='darwin']) .header {
+  padding-left: 84px;
+}
+
+.brand {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--dsw-font-family-brand);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 24px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-primary);
+  user-select: none;
+}
+
+.newSession {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 38px;
+  margin: 4px 2px 12px;
+  padding: 8px 12px;
+  box-sizing: border-box;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-button-elevated-fill);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+  cursor: pointer;
+}
+
+.newSession:hover {
+  background: var(--dsw-alias-button-floating-hover);
+}
+
+.newSession > svg {
+  flex: none;
+}
+
+:global([data-platform='darwin']) .newSession {
+  background: color-mix(in srgb, var(--dsw-alias-button-elevated-fill) 55%, transparent);
+}
+
+:global([data-platform='darwin']) .newSession:hover {
+  background: color-mix(in srgb, var(--dsw-alias-button-elevated-fill) 85%, transparent);
+}
+
+.newSessionLabel {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.region {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-right: calc(-1 * var(--dsh-sidebar-inline-padding));
+}
+
+.sectionHeader {
+  flex: none;
+  height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+  line-height: 28px;
+  color: var(--dsw-alias-label-tertiary);
+  user-select: none;
+}
+
+.list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  margin-right: 2px;
+  padding: 0 5px 16px 0;
+  scrollbar-gutter: stable;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.group + .group {
+  margin-top: 6px;
+}
+
+.loadMore {
+  flex: none;
+  height: 28px;
+  margin-top: 4px;
+  padding: 0 12px 0 28px;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.loadMore:hover:not(:disabled) {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.loadMore:disabled {
+  cursor: default;
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 80px;
+  padding: 0 12px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+  line-height: 20px;
+  text-align: center;
+}
+
+.emptyState > svg {
+  margin-bottom: 4px;
+  color: var(--dsw-alias-label-caption);
+}
+
+.emptyAction {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--dsw-alias-link);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px -2px 0;
+}
+
+.settingsTrigger {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 10px 0 8px;
+  box-sizing: border-box;
+  border: none;
+  border-radius: var(--dsw-radius-md);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  cursor: pointer;
+}
+
+.settingsTrigger:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.settingsTrigger > svg {
+  flex: none;
+}
+
+.settingsLabel {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.connection {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-right: 6px;
+  border-radius: var(--dsw-radius-sm);
+}
+
+.deleteDialog {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.dialogAction {
+  min-width: 72px;
+}
+
+.deleteAction:not(:disabled) {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.deleteStatus {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}

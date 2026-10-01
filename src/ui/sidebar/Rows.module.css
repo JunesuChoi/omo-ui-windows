@@ -1,0 +1,198 @@
+/* Ported from DSH ui-workspace rows/Rows.module.css (MIT, Copyright (c) 2026 DeepSeek). */
+
+.projectRow,
+.sessionRow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: var(--dsw-radius-md);
+  color: var(--dsw-alias-label-primary);
+  user-select: none;
+}
+
+.projectRow {
+  height: 34px;
+}
+
+.sessionRow {
+  height: 32px;
+}
+
+.projectRow:hover,
+.sessionRow:hover,
+.sessionRow.selected,
+.menuOpen,
+.renaming {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.rowMain {
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0 8px;
+  border: none;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rowMain:focus-visible {
+  outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: -2px;
+}
+
+.sessionRow .rowMain {
+  gap: 0;
+}
+
+.slot {
+  flex: none;
+  width: 16px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.folderActive {
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.chevron {
+  display: none;
+  color: var(--dsw-alias-label-caption);
+}
+
+.projectRow:hover .chevron {
+  display: inline-flex;
+}
+
+.projectRow:hover .folder {
+  display: none;
+}
+
+.arrow {
+  transition: transform 150ms var(--ds-ease-in-out);
+}
+
+.arrowOpen {
+  transform: rotate(90deg);
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.sessionRow .title {
+  margin: 0 6px 0 4px;
+}
+
+.projectRow:hover .rowMain,
+.projectRow:has(:focus-visible) .rowMain {
+  padding-right: 32px;
+}
+
+.time {
+  flex: none;
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* The trailing actions overlay the time cell and fade in rather than unmount, so keyboard
+   focus and test drivers can always reach them. */
+.rowActions {
+  position: absolute;
+  top: 0;
+  right: 8px;
+  bottom: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  opacity: 0;
+}
+
+.projectRow:hover .rowActions,
+.sessionRow:hover .rowActions,
+.projectRow:has(:focus-visible) .rowActions,
+.sessionRow:has(:focus-visible) .rowActions,
+.menuOpen .rowActions {
+  opacity: 1;
+}
+
+.sessionRow:hover .time,
+.sessionRow:has(:focus-visible) .time,
+.menuOpen .time {
+  opacity: 0;
+}
+
+.iconButton {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: var(--dsw-radius-xs);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.iconButton:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.renameSlot {
+  display: inline-flex;
+  padding-left: 8px;
+}
+
+.renameInput {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  box-sizing: border-box;
+  margin: 0 6px 0 4px;
+  padding: 0 6px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: var(--dsw-radius-sm);
+  outline: none;
+  background: var(--dsw-alias-button-elevated-fill);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arrow {
+    transition: none;
+  }
+}

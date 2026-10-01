@@ -1,38 +1,104 @@
-import { useEffect, useState } from "react";
-import type { BridgeStatus } from "../shared/ipc";
+import { useEffect, useMemo } from "react";
+import { createActions, createAppStore } from "./state";
+import { I18nProvider, resolveLocale } from "./i18n";
+import { ActionsContext, StoreContext, useAppSelector } from "./ui/app-context";
+import { Composer } from "./ui/composer/Composer";
+import { ConversationPane } from "./ui/conversation/ConversationPane";
+import { useNewSessionFlow } from "./ui/new-session";
+import { ConnectionBanner } from "./ui/onboarding/ConnectionBanner";
+import { Onboarding } from "./ui/onboarding/Onboarding";
+import { SettingsDialog } from "./ui/settings/SettingsDialog";
+import { AppFrame } from "./ui/shell/AppFrame";
+import { Sidebar } from "./ui/sidebar/Sidebar";
+import { applyThemePreference } from "./ui/theme";
+import { uiState, useUiState } from "./ui/ui-state";
 
-export function App() {
-  const [status, setStatus] = useState<BridgeStatus | null>(null);
+function MainPane() {
+  return (
+    <>
+      <ConnectionBanner />
+      <ConversationPane />
+      <Composer />
+    </>
+  );
+}
+
+function Shell() {
+  const bridgeState = useAppSelector((state) => state.bridge?.state ?? null);
+  const { sidebarVisible, sidebarWidth } = useUiState();
+  const newSession = useNewSessionFlow();
 
   useEffect(() => {
-    const bridge = window.omo;
-    if (!bridge) return undefined;
+    const root = document.documentElement;
+    if (bridgeState === null) delete root.dataset["bridgeState"];
+    else root.dataset["bridgeState"] = bridgeState;
+  }, [bridgeState]);
+
+  useEffect(
+    () =>
+      window.omo.onMenuCommand((command) => {
+        switch (command) {
+          case "settings":
+            uiState.setSettingsOpen(true);
+            break;
+          case "new-session":
+            void newSession();
+            break;
+          case "toggle-sidebar":
+            uiState.toggleSidebar();
+            break;
+        }
+      }),
+    [newSession],
+  );
+
+  if (bridgeState === "not-found") return <Onboarding />;
+  return (
+    <>
+      <AppFrame
+        sidebar={<Sidebar />}
+        main={<MainPane />}
+        sidebarVisible={sidebarVisible}
+        sidebarWidth={sidebarWidth}
+        onSidebarWidthChange={uiState.setSidebarWidth}
+      />
+      <SettingsDialog />
+    </>
+  );
+}
+
+export function App() {
+  const store = useMemo(() => createAppStore(), []);
+  const actions = useMemo(() => createActions(store, window.omo), [store]);
+  const { preferences } = useUiState();
+
+  useEffect(() => actions.connect(), [actions]);
+
+  useEffect(() => {
     let current = true;
-    void bridge.getStatus().then((next) => {
-      if (current) setStatus(next);
+    void window.omo.getPreferences().then((loaded) => {
+      if (current) uiState.setPreferences(loaded);
     });
-    const unsubscribe = bridge.onStatus(setStatus);
     return () => {
       current = false;
-      unsubscribe();
     };
   }, []);
 
+  const theme = preferences?.theme ?? "system";
+  useEffect(() => applyThemePreference(theme), [theme]);
+
+  const locale = resolveLocale(preferences?.locale ?? "system", navigator.language);
+  useEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
+
   return (
-    <main>
-      <h1>OmO UI</h1>
-      {status !== null && (
-        <dl>
-          <dt>Bridge state</dt>
-          <dd>{status.state}</dd>
-          <dt>omo path</dt>
-          <dd>{status.omo?.path ?? "none"}</dd>
-          <dt>omo version</dt>
-          <dd>{status.omo?.version ?? "none"}</dd>
-          <dt>Message</dt>
-          <dd>{status.message ?? ""}</dd>
-        </dl>
-      )}
-    </main>
+    <StoreContext.Provider value={store}>
+      <ActionsContext.Provider value={actions}>
+        <I18nProvider locale={locale}>
+          <Shell />
+        </I18nProvider>
+      </ActionsContext.Provider>
+    </StoreContext.Provider>
   );
 }
