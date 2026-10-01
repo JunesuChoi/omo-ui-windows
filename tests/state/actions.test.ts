@@ -12,7 +12,19 @@ import type {
   SkillsListResponse,
   Turn,
 } from "../../shared/protocol";
-import { createActions, createAppStore, selectSkillCatalog } from "../../src/state";
+import {
+  SIDE_BACKGROUND_MARKER,
+  createActions,
+  createAppStore,
+  memorySideStorage,
+  parseStoredSides,
+  selectPanelNotices,
+  selectSkillCatalog,
+  selectThreadsByWorkspace,
+  selectToastNotice,
+  sideDraftKey,
+} from "../../src/state";
+import type { SideStorage } from "../../src/state";
 import type { AppState, AppStore } from "../../src/state";
 import { makeThread, notification } from "./helpers";
 
@@ -84,6 +96,10 @@ class FakeBridge implements OmoBridgeApi {
     }),
     "turn/start": () => ({ turn: runningTurn }),
     "turn/steer": () => ({}),
+    "turn/interrupt": () => ({}),
+    "thread/name/set": () => ({}),
+    "thread/delete": () => ({}),
+    "thread/read": ({ threadId }) => ({ thread: makeThread(threadId) }),
   };
 
   async request<M extends ClientMethod>(method: M, params: ClientParams<M>): Promise<ClientResult<M>> {
@@ -656,6 +672,135 @@ describe("skill catalog actions", () => {
     expect(context.store.getState().loadedSkillCwds).toEqual({});
     expect(context.store.getState().conversations[THREAD_ID]?.resumed).toBe(false);
     expect(context.bridge.methods().filter((method) => method === "skills/list")).toHaveLength(2);
+    disconnect();
+  });
+});
+
+describe("side chats", () => {
+  const SIDE_ID = "side-1";
+  const CWD = "/tmp/work/project";
+  const request = {
+    question: "what changed?",
+    prompt: `${SIDE_BACKGROUND_MARKER}\nMain thread: x\n[end of background]\n\nSide question: what changed?`,
+    context: true,
+  };
+
+  function sideSetup(sideStorage: SideStorage = memorySideStorage()) {
+    const store = createAppStore();
+    const bridge = new FakeBridge();
+    let counter = 0;
+    const actions = createActions(store, bridge, { now: () => 5_000, newId: () => `id-${++counter}`, sideStorage });
+    return { store, bridge, actions, sideStorage };
+  }
+
+  async function openMain(context: ReturnType<typeof sideSetup>): Promise<void> {
+    await context.actions.newThread(CWD);
+    context.bridge.started = (cwd) => ({
+      thread: makeThread(SIDE_ID, { cwd }), model: "claude-fable-5", modelProvider: "anthropic", cwd, reasoningEffort: null,
+    });
+    context.bridge.calls.length = 0;
+  }
+
+  it("starts a side thread in the main thread's cwd and sends the prompt only there", async () => {
+    const context = sideSetup();
+    await openMain(context);
+    expect(await context.actions.askNewSide(request)).toBe(true);
+    const state = context.store.getState();
+    expect(state.btw.open).toBe(true);
+    expect(state.btw.sides[SIDE_ID]).toEqual({ id: SIDE_ID, parentId: THREAD_ID, question: "what changed?", createdAtMs: 5_000, context: true });
+    expect(state.btw.selected[THREAD_ID]).toBe(SIDE_ID);
+    expect(context.bridge.calls.find((call) => call.method === "thread/start")?.params).toEqual({ cwd: CWD });
+    const turnStarts = context.bridge.calls.filter((call) => call.method === "turn/start");
+    expect(turnStarts).toHaveLength(1);
+    expect(turnStarts[0]?.params).toMatchObject({ threadId: SIDE_ID, input: [{ type: "text", text: request.prompt, text_elements: [] }] });
+    expect(context.bridge.calls.filter((call) => JSON.stringify(call.params).includes(THREAD_ID))).toEqual([]);
+    expect(context.bridge.calls.find((call) => call.method === "thread/name/set")?.params).toEqual({ threadId: SIDE_ID, name: "BTW: what changed?" });
+    expect(selectThreadsByWorkspace(state).flatMap((group) => group.threads.map((thread) => thread.id))).toEqual([THREAD_ID]);
+  });
+
+  it("asks on the side while the main turn runs without steering or interrupting it", async () => {
+    const context = sideSetup();
+    await openMain(context);
+    context.store.dispatch(notification("turn/started", { threadId: THREAD_ID, turn: runningTurn }));
+    expect(await context.actions.askNewSide(request)).toBe(true);
+    expect(context.bridge.methods()).not.toContain("turn/steer");
+    expect(context.bridge.methods()).not.toContain("turn/interrupt");
+    expect(context.store.getState().conversations[THREAD_ID]?.activeTurnId).toBe(runningTurn.id);
+  });
+
+  it("keeps the question as the new-side draft and reports inside the panel when thread/start fails", async () => {
+    const context = sideSetup();
+    await openMain(context);
+    context.bridge.failing.add("thread/start");
+    expect(await context.actions.askNewSide(request)).toBe(false);
+    const state = context.store.getState();
+    expect(state.btw.sides).toEqual({});
+    expect(state.btw.pending).toEqual({});
+    expect(state.btw.drafts[sideDraftKey(THREAD_ID, null)]).toBe("what changed?");
+    expect(selectPanelNotices(state, THREAD_ID, null).map((notice) => notice.message)).toEqual(["-32000: thread/start failed"]);
+    expect(selectToastNotice(state)).toBeNull();
+  });
+
+  it("reports a failed side turn on the side thread instead of the toast queue", async () => {
+    const context = sideSetup();
+    await openMain(context);
+    context.bridge.failing.add("turn/start");
+    expect(await context.actions.askNewSide(request)).toBe(false);
+    const state = context.store.getState();
+    expect(selectPanelNotices(state, THREAD_ID, SIDE_ID).map((notice) => notice.message)).toEqual(["-32000: turn/start failed"]);
+    expect(selectToastNotice(state)).toBeNull();
+  });
+
+  it("steers a running side turn with a follow-up and pushes no steer toast", async () => {
+    const context = sideSetup();
+    await openMain(context);
+    await context.actions.askNewSide(request);
+    context.store.dispatch(notification("turn/started", { threadId: SIDE_ID, turn: { ...runningTurn, id: "side-turn" } }));
+    context.bridge.calls.length = 0;
+    expect(await context.actions.sendToSide(SIDE_ID, "and then?")).toBe(true);
+    expect(context.bridge.calls).toEqual([
+      { method: "turn/steer", params: { threadId: SIDE_ID, expectedTurnId: "side-turn", input: [{ type: "text", text: "and then?", text_elements: [] }] } },
+    ]);
+    expect(context.store.getState().notices).toEqual([]);
+    await context.actions.interruptSide(SIDE_ID);
+    expect(context.bridge.calls.at(-1)).toEqual({ method: "turn/interrupt", params: { threadId: SIDE_ID, turnId: "side-turn" } });
+  });
+
+  it("deletes a main thread's side chats before the main thread", async () => {
+    const context = sideSetup();
+    await openMain(context);
+    await context.actions.askNewSide(request);
+    context.bridge.calls.length = 0;
+    await context.actions.deleteThread(THREAD_ID);
+    expect(context.bridge.calls.filter((call) => call.method === "thread/delete").map((call) => call.params)).toEqual([
+      { threadId: SIDE_ID },
+      { threadId: THREAD_ID },
+    ]);
+    expect(context.store.getState().btw.sides).toEqual({});
+  });
+
+  it("restores stored side chats on connect and stores registry changes", async () => {
+    const stored = { id: "side-0", parentId: THREAD_ID, question: "old", createdAtMs: 1, context: true };
+    const context = sideSetup(memorySideStorage([stored, { id: 5 }]));
+    const disconnect = context.actions.connect();
+    expect(Object.values(context.store.getState().btw.sides)).toEqual([stored]);
+    await openMain(context);
+    await context.actions.askNewSide(request);
+    expect(parseStoredSides(context.sideStorage.load()).map((chat) => chat.id).sort()).toEqual(["side-0", SIDE_ID]);
+    disconnect();
+  });
+
+  it("loads a retained side chat's history through thread/read without activating it", async () => {
+    const stored = { id: "side-0", parentId: THREAD_ID, question: "old", createdAtMs: 1, context: true };
+    const context = sideSetup(memorySideStorage([stored]));
+    const disconnect = context.actions.connect();
+    await context.actions.selectSide(THREAD_ID, "side-0");
+    expect(context.bridge.methods()).toContain("thread/read");
+    expect(context.bridge.historyLoads).toEqual(["/Users/me/.omo/agent/sessions/side-0.jsonl"]);
+    const state = context.store.getState();
+    expect(state.activeThreadId).toBeNull();
+    expect(state.conversations["side-0"]?.historyState).toBe("loaded");
+    expect(state.btw.selected[THREAD_ID]).toBe("side-0");
     disconnect();
   });
 });

@@ -2,6 +2,7 @@ import type { DagRun, LiveTask, Model, WireGoal } from "../../shared/protocol";
 import type { HistoricalTask } from "../../shared/ipc";
 import type { AppState, Conversation, PendingRequest, SessionModel, SkillCatalog, ThreadSummary, ThreadLiveState } from "./types";
 import { EMPTY_SKILL_CATALOG } from "./skills";
+import { isSideThread } from "./btw";
 
 /** Returns a stable idle catalog when this cwd has not been requested. */
 export function selectSkillCatalog(state: AppState, cwd: string): SkillCatalog {
@@ -65,22 +66,37 @@ function workspaceLabel(cwd: string): string {
   return segments.at(-1) ?? cwd;
 }
 
-let groupCache: { threads: AppState["threads"]; order: string[]; groups: WorkspaceGroup[] } | null = null;
+interface GroupCache {
+  threads: AppState["threads"];
+  order: string[];
+  sides: AppState["btw"]["sides"];
+  unclaimed: AppState["btw"]["unclaimed"];
+  groups: WorkspaceGroup[];
+}
 
-/** Groups threads by cwd, groups ordered by their newest thread; memoized so the result is stable for unchanged threads. */
+let groupCache: GroupCache | null = null;
+
+/**
+ * Groups main threads by cwd, groups ordered by their newest thread; side chat threads are left out. Memoized so the
+ * result is stable for unchanged threads and side chats.
+ */
 export function selectThreadsByWorkspace(state: AppState): WorkspaceGroup[] {
-  if (groupCache !== null && groupCache.threads === state.threads && groupCache.order === state.threadOrder) {
+  const { sides, unclaimed } = state.btw;
+  if (
+    groupCache !== null && groupCache.threads === state.threads && groupCache.order === state.threadOrder &&
+    groupCache.sides === sides && groupCache.unclaimed === unclaimed
+  ) {
     return groupCache.groups;
   }
   const groups = new Map<string, WorkspaceGroup>();
   for (const id of state.threadOrder) {
     const summary = state.threads[id];
-    if (summary === undefined) continue;
+    if (summary === undefined || isSideThread(state, summary)) continue;
     const group = groups.get(summary.cwd);
     if (group === undefined) groups.set(summary.cwd, { cwd: summary.cwd, label: workspaceLabel(summary.cwd), threads: [summary] });
     else group.threads.push(summary);
   }
-  groupCache = { threads: state.threads, order: state.threadOrder, groups: [...groups.values()] };
+  groupCache = { threads: state.threads, order: state.threadOrder, sides, unclaimed, groups: [...groups.values()] };
   return groupCache.groups;
 }
 

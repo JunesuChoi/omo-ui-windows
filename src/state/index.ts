@@ -10,15 +10,31 @@ export type {
   PendingRequest,
   PendingUserMessage,
   SessionModel,
+  SideChat,
+  BtwState,
   SkillCatalog,
   ThreadSummary,
   ThreadLiveState,
 } from "./types";
 export { createInitialState, reduce } from "./reducer";
-export { createAppStore, StoreContext, useAppSelector } from "./store";
+export { createAppStore, StoreContext, useAppSelector, useAppStore } from "./store";
 export type { AppStore } from "./store";
 export { createActions } from "./actions";
-export type { ActionOptions, AppActions } from "./actions";
+export type { ActionOptions, AppActions, NewSideRequest, SideStorage } from "./actions";
+export { localSideStorage, memorySideStorage } from "./actions";
+export {
+  SIDE_BACKGROUND_MARKER,
+  isSideNotice,
+  isSideThread,
+  parseBtwCommand,
+  parseStoredSides,
+  selectPanelNotices,
+  selectSidesOf,
+  selectToastNotice,
+  sideDraftKey,
+  sideName,
+} from "./btw";
+export type { BtwCommand } from "./btw";
 export {
   selectThreadLiveState,
   selectDagRuns,

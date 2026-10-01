@@ -1,7 +1,8 @@
 import type { BridgeStatus, OmoBridgeApi } from "../../shared/ipc";
 import type { ApprovalDecision, ReasoningEffort, RequestId, RpcNotification, ThreadSessionResult, UserInput } from "../../shared/protocol";
 import type { AppStore } from "./store";
-import type { NoticeCode, SessionModel } from "./types";
+import type { AppState, NoticeCode, SessionModel, SideChat } from "./types";
+import { parseStoredSides, selectSidesOf, sideDraftKey, sideName } from "./btw";
 import { isModel, isSkill, isSkillError, isThread, parseNotification } from "./wire";
 import { selectSkillCatalog } from "./selectors";
 import { object, parseGoal } from "./live-wire";
@@ -12,6 +13,47 @@ const RECENT_WORKSPACE_LIMIT = 10;
 export interface ActionOptions {
   now?: () => number;
   newId?: () => string;
+  /** Where side chats persist; defaults to memory, and App.tsx passes `localSideStorage()`. */
+  sideStorage?: SideStorage;
+}
+
+/** Where side chats persist across launches; `load` returns stored JSON that the caller validates. */
+export interface SideStorage {
+  load(): unknown;
+  save(sides: SideChat[]): void;
+}
+
+const SIDE_STORAGE_KEY = "omo-ui.side-chats.v1";
+
+/** Side chats in the renderer's localStorage under `omo-ui.side-chats.v1`. */
+export function localSideStorage(storage: Storage = window.localStorage): SideStorage {
+  return {
+    load: (): unknown => {
+      const raw = storage.getItem(SIDE_STORAGE_KEY);
+      return raw === null ? [] : JSON.parse(raw);
+    },
+    save: (sides) => storage.setItem(SIDE_STORAGE_KEY, JSON.stringify(sides)),
+  };
+}
+
+/** Side chats kept only for the lifetime of the returned object. */
+export function memorySideStorage(initial: unknown = []): SideStorage {
+  let value = initial;
+  return {
+    load: () => value,
+    save: (sides) => {
+      value = sides.map((side) => ({ ...side }));
+    },
+  };
+}
+
+/** A new side chat; the UI builds `prompt` (the main thread's background, then the question). */
+export interface NewSideRequest {
+  question: string;
+  /** The first side message as sent to omo. */
+  prompt: string;
+  /** Whether `prompt` carries the main thread's background. */
+  context: boolean;
 }
 
 /** Async operations over the bridge. Every promise resolves; bridge failures become error notices. */
@@ -37,6 +79,21 @@ export interface AppActions {
   answerUserInput(id: RequestId, answers: Record<string, string[]>, comment?: string): Promise<void>;
   selectModel(modelId: string | null, effort: ReasoningEffort | null): Promise<void>;
   dismissNotice(id: string): void;
+  /** Shows or hides the side chat panel. */
+  setSidePanel(open: boolean): void;
+  /** Shows `sideId` (null: the new-side composer) for `parentId`, loading a retained side chat's history first. */
+  selectSide(parentId: string, sideId: string | null): Promise<void>;
+  /** Attaches or detaches the main thread's background for the next new side chat of `parentId`. */
+  setSideContext(parentId: string, attached: boolean): void;
+  setSideDraft(key: string, text: string): void;
+  /**
+   * Starts a side chat of the active thread: thread/start in its cwd with the composer's model, then `prompt` as the
+   * first turn. Opens the panel and sends nothing to the main thread; resolves true when omo accepted the turn.
+   */
+  askNewSide(request: NewSideRequest): Promise<boolean>;
+  /** Sends a follow-up to a side chat: steers its running turn, otherwise starts a turn; resolves true when omo accepted it. */
+  sendToSide(sideId: string, text: string): Promise<boolean>;
+  interruptSide(sideId: string): Promise<void>;
 }
 
 function sessionOf(result: ThreadSessionResult): SessionModel {
@@ -50,6 +107,7 @@ function errorMessage(error: unknown): string {
 export function createActions(store: AppStore, bridge: OmoBridgeApi, options: ActionOptions = {}): AppActions {
   const now = options.now ?? Date.now;
   const newId = options.newId ?? (() => crypto.randomUUID());
+  const sideStorage = options.sideStorage ?? memorySideStorage();
 
   const notify = (level: "info" | "error", message: string, threadId: string | null = null, code?: NoticeCode): void => {
     store.dispatch({ type: "notice/pushed", notice: { id: newId(), level, message, threadId, ...(code === undefined ? {} : { code }) } });
@@ -140,6 +198,84 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
     return catalog.status === "idle" ? loadSkills(cwd, { force: catalog.stale }) : Promise.resolve();
   };
 
+  const loadStoredSides = (): SideChat[] => {
+    try {
+      return parseStoredSides(sideStorage.load());
+    } catch (error) {
+      console.warn("Ignoring unreadable stored side chats", error);
+      return [];
+    }
+  };
+  const saveSides = (sides: AppState["btw"]["sides"]): void => {
+    try {
+      sideStorage.save(Object.values(sides));
+    } catch (error) {
+      fail(error);
+    }
+  };
+
+  /** Sends to a thread: steers its running turn, otherwise resumes the thread when needed and starts a turn. */
+  const deliver = async (threadId: string, text: string, announceSteer: boolean): Promise<boolean> => {
+    const conversation = store.getState().conversations[threadId];
+    const activeTurnId = conversation?.activeTurnId ?? null;
+    if (activeTurnId !== null) {
+      try {
+        await bridge.request("turn/steer", { threadId, expectedTurnId: activeTurnId, input: textInput(text) });
+        if (announceSteer) notify("info", "Message sent to the running turn.", threadId, "steered");
+        return true;
+      } catch (error) {
+        fail(error, threadId);
+        return false;
+      }
+    }
+    const clientId = newId();
+    try {
+      if (conversation?.resumed !== true) {
+        const resumed = await bridge.request("thread/resume", { threadId });
+        if (!isThread(resumed.thread)) throw new Error("omo returned a malformed thread/resume result");
+        store.dispatch({ type: "thread/opened", thread: resumed.thread, resumed: true, session: sessionOf(resumed) });
+        await readGoal(threadId);
+        await ensureSkills(resumed.thread.cwd);
+      }
+      store.dispatch({ type: "user/messageSent", threadId, clientId, text, sentAtMs: now() });
+      const { modelId, effort } = store.getState().composer;
+      await bridge.request("turn/start", {
+        threadId,
+        input: textInput(text),
+        clientUserMessageId: clientId,
+        ...(modelId === null ? {} : { model: modelId }),
+        ...(effort === null ? {} : { effort }),
+      });
+      return true;
+    } catch (error) {
+      store.dispatch({ type: "user/messageFailed", threadId, clientId, message: errorMessage(error) });
+      return false;
+    }
+  };
+
+  /** Starts and registers a side thread; on failure restores the question as the new-side draft and reports in the panel. */
+  const startSideThread = async (parentId: string, cwd: string, question: string, context: boolean): Promise<SideChat | null> => {
+    const { modelId } = store.getState().composer;
+    store.dispatch({ type: "btw/starting", cwd });
+    try {
+      const result = await bridge.request("thread/start", modelId === null ? { cwd } : { cwd, model: modelId });
+      if (!isThread(result.thread)) throw new Error("omo returned a malformed thread/start result");
+      const side: SideChat = { id: result.thread.id, parentId, question, createdAtMs: now(), context };
+      store.dispatch({ type: "btw/started", cwd, side });
+      store.dispatch({ type: "thread/opened", thread: result.thread, resumed: true, session: sessionOf(result) });
+      store.dispatch({ type: "history/loaded", threadId: side.id, turns: [] });
+      return side;
+    } catch (error) {
+      store.dispatch({ type: "btw/started", cwd, side: null });
+      store.dispatch({ type: "btw/draftSet", key: sideDraftKey(parentId, null), text: question });
+      store.dispatch({
+        type: "notice/pushed",
+        notice: { id: newId(), level: "error", message: errorMessage(error), threadId: parentId, scope: "side" },
+      });
+      return null;
+    }
+  };
+
   const rememberWorkspace = (cwd: string): Promise<void> =>
     guarded(async () => {
       const preferences = await bridge.getPreferences();
@@ -151,6 +287,14 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
     connect() {
       let active = true;
       let statusPushed = false;
+      if (!store.getState().btw.restored) store.dispatch({ type: "btw/restored", sides: loadStoredSides() });
+      let savedSides = store.getState().btw.sides;
+      const persistSides = (): void => {
+        const { sides } = store.getState().btw;
+        if (sides === savedSides) return;
+        savedSides = sides;
+        saveSides(sides);
+      };
       const reconciled = new Set<string>();
       const todoCompletions = new Set<string>();
       const reconcile = async (notification: RpcNotification): Promise<void> => {
@@ -194,6 +338,7 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
         }
       };
       const unsubscribers = [
+        store.subscribe(persistSides),
         bridge.onStatus((status) => {
           statusPushed = true;
           applyStatus(status);
@@ -284,47 +429,12 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
     },
 
     async sendMessage(text) {
-      const state = store.getState();
-      const threadId = state.activeThreadId;
+      const threadId = store.getState().activeThreadId;
       if (threadId === null) {
         notify("error", "Open or start a session before sending a message.", null, "noActiveThread");
         return false;
       }
-      const conversation = state.conversations[threadId];
-      const activeTurnId = conversation?.activeTurnId ?? null;
-      if (activeTurnId !== null) {
-        try {
-          await bridge.request("turn/steer", { threadId, expectedTurnId: activeTurnId, input: textInput(text) });
-          notify("info", "Message sent to the running turn.", threadId, "steered");
-          return true;
-        } catch (error) {
-          fail(error, threadId);
-          return false;
-        }
-      }
-      const clientId = newId();
-      try {
-        if (conversation?.resumed !== true) {
-          const resumed = await bridge.request("thread/resume", { threadId });
-          if (!isThread(resumed.thread)) throw new Error("omo returned a malformed thread/resume result");
-          store.dispatch({ type: "thread/opened", thread: resumed.thread, resumed: true, session: sessionOf(resumed) });
-          await readGoal(threadId);
-          await ensureSkills(resumed.thread.cwd);
-        }
-        store.dispatch({ type: "user/messageSent", threadId, clientId, text, sentAtMs: now() });
-        const { modelId, effort } = store.getState().composer;
-        await bridge.request("turn/start", {
-          threadId,
-          input: textInput(text),
-          clientUserMessageId: clientId,
-          ...(modelId === null ? {} : { model: modelId }),
-          ...(effort === null ? {} : { effort }),
-        });
-        return true;
-      } catch (error) {
-        store.dispatch({ type: "user/messageFailed", threadId, clientId, message: errorMessage(error) });
-        return false;
-      }
+      return deliver(threadId, text, true);
     },
 
     async interrupt() {
@@ -349,6 +459,18 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
 
     deleteThread: (threadId) =>
       guarded(async () => {
+        for (const side of selectSidesOf(store.getState(), threadId)) {
+          try {
+            await bridge.request("thread/delete", { threadId: side.id });
+            store.dispatch({
+              type: "rpc/notification",
+              notification: { method: "thread/deleted", params: { threadId: side.id } },
+              receivedAtMs: now(),
+            });
+          } catch (error) {
+            fail(error);
+          }
+        }
         await bridge.request("thread/delete", { threadId });
         store.dispatch({
           type: "rpc/notification",
@@ -380,6 +502,65 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
 
     dismissNotice(id) {
       store.dispatch({ type: "notice/dismissed", id });
+    },
+
+    setSidePanel(open) {
+      store.dispatch({ type: "btw/toggled", open });
+    },
+
+    async selectSide(parentId, sideId) {
+      store.dispatch({ type: "btw/selected", parentId, sideId });
+      if (sideId === null) return;
+      const state = store.getState();
+      const historyState = state.conversations[sideId]?.historyState ?? "idle";
+      if (historyState !== "idle" && historyState !== "error") return;
+      store.dispatch({ type: "history/loading", threadId: sideId });
+      try {
+        let path = state.threads[sideId]?.path ?? null;
+        if (state.threads[sideId] === undefined) {
+          const read = await bridge.request("thread/read", { threadId: sideId });
+          if (!isThread(read.thread)) throw new Error("omo returned a malformed thread/read result");
+          store.dispatch({ type: "thread/opened", thread: read.thread, resumed: false });
+          path = read.thread.path ?? null;
+        }
+        const history = path === null ? { turns: [], todo: null, tasks: [] } : await bridge.loadHistory(path);
+        store.dispatch({ type: "history/loaded", threadId: sideId, ...history });
+      } catch (error) {
+        store.dispatch({ type: "history/failed", threadId: sideId, message: errorMessage(error) });
+        fail(error, sideId);
+      }
+    },
+
+    setSideContext(parentId, attached) {
+      store.dispatch({ type: "btw/contextSet", parentId, attached });
+    },
+
+    setSideDraft(key, text) {
+      store.dispatch({ type: "btw/draftSet", key, text });
+    },
+
+    async askNewSide({ question, prompt, context }) {
+      store.dispatch({ type: "btw/toggled", open: true });
+      const state = store.getState();
+      const parentId = state.activeThreadId;
+      const parent = parentId === null ? undefined : state.threads[parentId];
+      if (parentId === null || parent === undefined) return false;
+      const side = await startSideThread(parentId, parent.cwd, question, context);
+      if (side === null) return false;
+      void guarded(async () => {
+        await bridge.request("thread/name/set", { threadId: side.id, name: sideName(question) });
+      }, side.id);
+      return deliver(side.id, prompt, false);
+    },
+
+    sendToSide: (sideId, text) => deliver(sideId, text, false),
+
+    async interruptSide(sideId) {
+      const turnId = store.getState().conversations[sideId]?.activeTurnId ?? null;
+      if (turnId === null) return;
+      await guarded(async () => {
+        await bridge.request("turn/interrupt", { threadId: sideId, turnId });
+      }, sideId);
     },
   };
 }

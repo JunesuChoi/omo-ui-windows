@@ -31,6 +31,13 @@ export function createAppStore(initial: AppState = createInitialState()): AppSto
 
 export const StoreContext = createContext<AppStore | null>(null);
 
+/** The store from the nearest StoreContext provider, for reading state inside event handlers; throws outside the provider. */
+export function useAppStore(): AppStore {
+  const store = useContext(StoreContext);
+  if (store === null) throw new Error("useAppStore requires a StoreContext provider");
+  return store;
+}
+
 /** Subscribes to a slice of the store; `selector` must return a stable reference for unchanged input. */
 export function useAppSelector<T>(selector: (state: AppState) => T): T {
   const store = useContext(StoreContext);

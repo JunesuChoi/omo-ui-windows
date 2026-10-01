@@ -108,11 +108,45 @@ export interface Notice {
   message: string;
   threadId: string | null;
   code?: NoticeCode;
+  /** "side" renders the notice inside the side chat panel of `threadId` (its main thread) instead of as a toast. */
+  scope?: "side";
 }
 
 export interface ComposerState {
   modelId: string | null;
   effort: ReasoningEffort | null;
+}
+
+/** One retained /btw side chat of a main thread; the side chat is its own omo thread. */
+export interface SideChat {
+  /** The side thread id. */
+  id: string;
+  /** The main thread the side chat was asked from. */
+  parentId: string;
+  /** The question as typed; the first side message also carries the main thread's background. */
+  question: string;
+  createdAtMs: number;
+  /** Whether the first side message carried the main thread's read-only background. */
+  context: boolean;
+}
+
+export interface BtwState {
+  /** Whether the side chat panel is shown. */
+  open: boolean;
+  /** Side chats by side thread id. */
+  sides: Record<string, SideChat>;
+  /** The side chat shown per main thread; null or absent shows the new-side composer. */
+  selected: Record<string, string | null>;
+  /** Main threads whose next new side chat starts without background (the context chip was removed). */
+  detached: Record<string, true>;
+  /** Side composer drafts keyed by `sideDraftKey`. */
+  drafts: Record<string, string>;
+  /** Number of side-chat thread/start requests in flight per cwd. */
+  pending: Record<string, number>;
+  /** Threads (id → cwd) that thread/started announced while a side start was pending in their cwd and nothing has claimed yet. */
+  unclaimed: Record<string, string>;
+  /** True once the stored side chats were read; storage is written only after that. */
+  restored: boolean;
 }
 
 export interface SkillCatalog {
@@ -141,6 +175,7 @@ export interface AppState {
   loadedSkillCwds: Record<string, true>;
   /** Monotonic across bridge reconnects to fence responses from the previous process. */
   skillGeneration: number;
+  btw: BtwState;
 }
 
 export type AppEvent =
@@ -165,4 +200,11 @@ export type AppEvent =
   | { type: "user/messageFailed"; threadId: string; clientId: string; message: string }
   | { type: "composer/modelSelected"; modelId: string | null; effort: ReasoningEffort | null }
   | { type: "notice/pushed"; notice: Notice }
-  | { type: "notice/dismissed"; id: string };
+  | { type: "notice/dismissed"; id: string }
+  | { type: "btw/restored"; sides: SideChat[] }
+  | { type: "btw/toggled"; open: boolean }
+  | { type: "btw/selected"; parentId: string; sideId: string | null }
+  | { type: "btw/contextSet"; parentId: string; attached: boolean }
+  | { type: "btw/draftSet"; key: string; text: string }
+  | { type: "btw/starting"; cwd: string }
+  | { type: "btw/started"; cwd: string; side: SideChat | null };

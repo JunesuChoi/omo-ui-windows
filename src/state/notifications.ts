@@ -19,6 +19,7 @@ import type { AppState, Conversation, ConversationItem } from "./types";
 import type { ServerNotification } from "./wire";
 import { invalidateSkillCatalogs } from "./skills";
 import { applyLiveExtension } from "./live";
+import { forgetThread, holdPendingSide } from "./btw";
 
 interface ItemPlacement {
   threadId: string;
@@ -99,8 +100,12 @@ export function applyNotification(state: AppState, notification: ServerNotificat
     }
     case "skills/changed":
       return invalidateSkillCatalogs(state);
-    case "thread/started":
-      return upsertThread(state, toSummary(notification.params.thread));
+    case "thread/started": {
+      const summary = toSummary(notification.params.thread);
+      const known = state.threads[summary.id] !== undefined;
+      const listed = upsertThread(state, summary);
+      return known ? listed : holdPendingSide(listed, summary);
+    }
     case "thread/status/changed": {
       const { threadId, status } = notification.params;
       return updateThread(state, threadId, (summary) => ({ ...summary, status }));
@@ -111,7 +116,7 @@ export function applyNotification(state: AppState, notification: ServerNotificat
     }
     case "thread/archived":
     case "thread/deleted":
-      return removeThread(state, notification.params.threadId);
+      return forgetThread(removeThread(state, notification.params.threadId), notification.params.threadId);
     case "turn/started": {
       const { threadId, turn } = notification.params;
       return updateConversation(state, threadId, (conversation) => {

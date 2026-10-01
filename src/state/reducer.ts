@@ -8,6 +8,7 @@ import {
   updateTurn,
   wireItems,
 } from "./conversation";
+import { emptyBtwState, reduceBtw, releaseHeldThread } from "./btw";
 import { applyNotification } from "./notifications";
 import { reduceSkillCatalog } from "./skills";
 import { dropRequest, fillEmptyPreview, pushNotice, upsertThread, withThreads } from "./threads";
@@ -30,6 +31,7 @@ export function createInitialState(): AppState {
     skillCatalogs: {},
     loadedSkillCwds: {},
     skillGeneration: 0,
+    btw: emptyBtwState(),
   };
 }
 
@@ -136,7 +138,7 @@ export function reduce(state: AppState, event: AppEvent): AppState {
         event.resumed ? { ...state, loadedSkillCwds: { ...state.loadedSkillCwds, [event.thread.cwd]: true } } : state,
         toSummary(event.thread),
       );
-      return updateConversation(opened, event.thread.id, (conversation) => ({
+      return updateConversation(releaseHeldThread(opened, event.thread.id), event.thread.id, (conversation) => ({
         ...conversation,
         resumed: event.resumed,
         live: { ...conversation.live, freshness: event.resumed ? "live" : conversation.live.freshness },
@@ -214,6 +216,14 @@ export function reduce(state: AppState, event: AppEvent): AppState {
       const notices = state.notices.filter((notice) => notice.id !== event.id);
       return notices.length === state.notices.length ? state : { ...state, notices };
     }
+    case "btw/restored":
+    case "btw/toggled":
+    case "btw/selected":
+    case "btw/contextSet":
+    case "btw/draftSet":
+    case "btw/starting":
+    case "btw/started":
+      return reduceBtw(state, event);
     default:
       return assertNever(event);
   }
