@@ -4,7 +4,7 @@
  * `npm run smoke:bridge -- [--omo <path>] [--prompt <text>] [--timeout <ms>]`.
  * Exit codes: 0 pong-style turn succeeded, 1 turn or usage failure, 2 omo not found, 3 app-server start failed.
  */
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
@@ -152,8 +152,15 @@ function logStartFailure(error: unknown): void {
   if (code === null && signal === null) log(`error: ${oneLine(errorText(error))}`);
 }
 
-async function deleteThread(client: AppServerClient, threadId: string): Promise<void> {
+/** Deletes the recorded thread only after omo reports it in this run's own temporary workspace. */
+async function deleteThread(client: AppServerClient, threadId: string, workspace: string): Promise<void> {
   try {
+    const { thread } = await client.request("thread/read", { threadId });
+    const cwd = await realpath(thread.cwd);
+    if (cwd !== workspace) {
+      log(`thread kept: its workspace ${cwd} is not ${workspace}`);
+      return;
+    }
     await client.request("thread/delete", { threadId });
     log("thread deleted");
   } catch (error) {
@@ -196,6 +203,7 @@ async function run(args: SmokeArgs): Promise<number> {
   }
   const tempDir = await mkdtemp(`${os.tmpdir()}/omo-ui-smoke-`);
   resources.tempDir = tempDir;
+  const workspace = await realpath(tempDir);
   const session = await client.request("thread/start", { cwd: tempDir });
   const threadId = session.thread.id;
   log(`thread: ${threadId}`);
@@ -204,7 +212,7 @@ async function run(args: SmokeArgs): Promise<number> {
   try {
     succeeded = await runTurn({ client, store, threadId, exited }, args);
   } finally {
-    await deleteThread(client, threadId);
+    await deleteThread(client, threadId, workspace);
   }
   await client.stop();
   const info = await exited;

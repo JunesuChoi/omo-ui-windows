@@ -58,8 +58,21 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   if (launched !== null) {
     const { page } = launched;
+    const workspaces = [WORKSPACE, realpathSync(WORKSPACE)];
     for (const id of createdThreads) {
-      await page.evaluate((threadToDelete) => window.omo.request("thread/delete", { threadId: threadToDelete }), id);
+      // Only threads this spec started, and only while omo still reports them in its own workspace.
+      const read = await page.evaluate(async (threadId) => {
+        try {
+          return { ok: true as const, cwd: (await window.omo.request("thread/read", { threadId })).thread.cwd };
+        } catch (error) {
+          return { ok: false as const, error: error instanceof Error ? error.message : String(error) };
+        }
+      }, id);
+      if (read.ok && workspaces.includes(read.cwd)) {
+        await page.evaluate((threadToDelete) => window.omo.request("thread/delete", { threadId: threadToDelete }), id);
+      } else {
+        console.warn(`real.spec: kept thread ${id}: ${read.ok ? `its workspace is ${read.cwd}` : read.error}`);
+      }
     }
     await launched.close();
     launched = null;
