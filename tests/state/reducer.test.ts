@@ -210,3 +210,25 @@ describe("reduce", () => {
     expect(turns?.[1]?.items.map((entry) => entry.item)).toMatchObject([{ type: "reasoning", content: ["", "think"] }]);
   });
 });
+
+describe("thread preview", () => {
+  const opened: AppEvent = { type: "thread/opened", thread: makeThread("t-preview"), resumed: true };
+
+  it("fills an empty preview with the first user message item", () => {
+    const state = replay([
+      opened,
+      turnStarted("t-preview", "turn-1"),
+      notification("item/started", { threadId: "t-preview", turnId: "turn-1", item: userMessage("u1", "Fix the login bug\nand add tests") }),
+    ]);
+    expect(state.threads["t-preview"]?.preview).toBe("Fix the login bug\nand add tests");
+  });
+
+  it("fills the preview when a message is sent and keeps it afterwards", () => {
+    const state = replay([
+      opened,
+      { type: "user/messageSent", threadId: "t-preview", clientId: "c1", text: "first", sentAtMs: 1 },
+      { type: "user/messageSent", threadId: "t-preview", clientId: "c2", text: "second", sentAtMs: 2 },
+    ]);
+    expect(state.threads["t-preview"]?.preview).toBe("first");
+  });
+});

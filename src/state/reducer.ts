@@ -8,7 +8,7 @@ import {
   wireItems,
 } from "./conversation";
 import { applyNotification } from "./notifications";
-import { dropRequest, pushNotice, upsertThread, withThreads } from "./threads";
+import { dropRequest, fillEmptyPreview, pushNotice, upsertThread, withThreads } from "./threads";
 import type { AppEvent, AppState, Conversation, ConversationTurn, ThreadSummary } from "./types";
 import { parseNotification, parseServerRequest } from "./wire";
 
@@ -141,10 +141,11 @@ export function reduce(state: AppState, event: AppEvent): AppState {
       }));
     case "user/messageSent": {
       const { clientId, text, sentAtMs } = event;
-      return updateConversation(state, event.threadId, (conversation) => ({
+      const queued = updateConversation(state, event.threadId, (conversation) => ({
         ...conversation,
         pendingUserMessages: [...conversation.pendingUserMessages, { clientId, text, sentAtMs }],
       }));
+      return fillEmptyPreview(queued, event.threadId, text);
     }
     case "user/messageFailed": {
       const withoutPending = updateExistingConversation(state, event.threadId, (conversation) => ({

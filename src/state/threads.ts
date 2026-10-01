@@ -35,6 +35,13 @@ function without<T>(record: Record<string, T>, key: string): Record<string, T> {
   return Object.fromEntries(Object.entries(record).filter(([id]) => id !== key));
 }
 
+/** Sets an empty thread preview to `text`, matching the first-user-message preview omo reports in thread/list. */
+export function fillEmptyPreview(state: AppState, threadId: string, text: string): AppState {
+  const preview = text.trim();
+  if (preview === "") return state;
+  return updateThread(state, threadId, (summary) => (summary.preview.trim() === "" ? { ...summary, preview } : summary));
+}
+
 export function removeThread(state: AppState, threadId: string): AppState {
   const hasPending = state.pendingRequests.some((request) => request.threadId === threadId);
   const known =

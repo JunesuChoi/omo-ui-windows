@@ -14,7 +14,7 @@ import {
   upsertItem,
   wireItems,
 } from "./conversation";
-import { dropRequest, pushNotice, removeThread, updateThread, upsertThread } from "./threads";
+import { dropRequest, fillEmptyPreview, pushNotice, removeThread, updateThread, upsertThread } from "./threads";
 import type { AppState, Conversation, ConversationItem } from "./types";
 import type { ServerNotification } from "./wire";
 
@@ -38,6 +38,11 @@ function placeItem(state: AppState, placement: ItemPlacement, completedAtMs: num
     );
     return item.type === "userMessage" ? settlePendingMessage(placed, item) : placed;
   });
+}
+
+function previewFromUserItem(state: AppState, threadId: string, item: ThreadItem): AppState {
+  if (item.type !== "userMessage") return state;
+  return fillEmptyPreview(state, threadId, item.content.map((part) => (part.type === "text" ? part.text : "")).join(""));
 }
 
 function editItem(
@@ -106,11 +111,13 @@ export function applyNotification(state: AppState, notification: ServerNotificat
     }
     case "item/started": {
       const { startedAtMs, ...placement } = notification.params;
-      return placeItem(state, { ...placement, receivedAtMs }, null, startedAtMs ?? receivedAtMs);
+      const placed = placeItem(state, { ...placement, receivedAtMs }, null, startedAtMs ?? receivedAtMs);
+      return previewFromUserItem(placed, placement.threadId, placement.item);
     }
     case "item/completed": {
       const { completedAtMs, ...placement } = notification.params;
-      return placeItem(state, { ...placement, receivedAtMs }, completedAtMs ?? receivedAtMs, receivedAtMs);
+      const placed = placeItem(state, { ...placement, receivedAtMs }, completedAtMs ?? receivedAtMs, receivedAtMs);
+      return previewFromUserItem(placed, placement.threadId, placement.item);
     }
     case "item/agentMessage/delta":
       return appendAgentText(state, notification.params, receivedAtMs);
