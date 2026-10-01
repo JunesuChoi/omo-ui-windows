@@ -121,6 +121,14 @@ export interface InstallResult {
 
 export type MenuCommand = "new-session" | "settings" | "toggle-sidebar";
 
+/** Where the header's Open button can open a thread's workspace; `finder` is always available. */
+export const OPEN_TARGET_IDS = ["vscode", "cursor", "terminal", "finder"] as const;
+export type OpenTargetId = (typeof OPEN_TARGET_IDS)[number];
+
+export interface OpenTarget {
+  id: OpenTargetId;
+}
+
 export interface OmoBridgeApi {
   getStatus(): Promise<BridgeStatus>;
   onStatus(listener: (status: BridgeStatus) => void): () => void;
@@ -146,6 +154,10 @@ export interface OmoBridgeApi {
   copyText(text: string): Promise<void>;
   openExternal(url: string): Promise<void>;
   revealPath(path: string): Promise<void>;
+  /** Installed Open targets in preference order (editors, Terminal, then Finder). */
+  listOpenTargets(): Promise<OpenTarget[]>;
+  /** Opens `cwd` (an absolute, existing directory) in `target`; with no target, the first installed editor, else Finder. Resolves the target used. */
+  openWorkspace(cwd: string, target?: OpenTargetId | null): Promise<OpenTargetId>;
   readonly platform: string;
 }
 
@@ -169,6 +181,8 @@ export const IPC = {
   copyText: "app:copy-text",
   openExternal: "app:open-external",
   revealPath: "app:reveal-path",
+  listOpenTargets: "app:list-open-targets",
+  openWorkspace: "app:open-workspace",
 } as const;
 
 /** Result envelope the main process returns from the `omo:request` invoke channel. */

@@ -53,6 +53,16 @@ export function EditorGlyph({ size = 14, className }: IconProps) {
   );
 }
 
+/** Terminal prompt in a rounded tile. */
+export function TerminalGlyph({ size = 14, className }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" width={size} height={size} className={className} aria-hidden>
+      <rect x="1.5" y="2.5" width="13" height="11" rx="2.5" fill="none" stroke="currentColor" strokeWidth="1.3" />
+      <path d="m4.5 6 2.2 2-2.2 2M8 10.3h3.5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 /** Plus inside a circle, for the dashed New project button. */
 export function PlusCircleGlyph({ size = 16, className }: IconProps) {
   return (

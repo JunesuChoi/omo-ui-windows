@@ -9,6 +9,8 @@ import type {
   IPC,
   MenuCommand,
   OmoBridgeApi,
+  OpenTarget,
+  OpenTargetId,
   Preferences,
   RequestEnvelope,
 } from "../shared/ipc";
@@ -35,6 +37,8 @@ const CHANNELS = {
   copyText: "app:copy-text",
   openExternal: "app:open-external",
   revealPath: "app:reveal-path",
+  listOpenTargets: "app:list-open-targets",
+  openWorkspace: "app:open-workspace",
 } as const satisfies typeof IPC;
 
 async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
@@ -78,6 +82,9 @@ const api = {
   copyText: (text: string): Promise<void> => invoke(CHANNELS.copyText, text),
   openExternal: (url: string): Promise<void> => invoke(CHANNELS.openExternal, url),
   revealPath: (target: string): Promise<void> => invoke(CHANNELS.revealPath, target),
+  listOpenTargets: (): Promise<OpenTarget[]> => invoke(CHANNELS.listOpenTargets),
+  openWorkspace: (cwd: string, target?: OpenTargetId | null): Promise<OpenTargetId> =>
+    invoke(CHANNELS.openWorkspace, cwd, target ?? null),
   platform: process.platform,
 } satisfies OmoBridgeApi;
 

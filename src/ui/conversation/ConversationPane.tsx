@@ -108,6 +108,12 @@ function Transcript({ threadId, cwd, turnActive }: { threadId: string; cwd: stri
   const streaming = activeTurn?.items.some((entry) => entry.streaming) ?? false;
   const showWorking = turnActive && !streaming && pending.length === 0;
   const historyState = conversation?.historyState ?? "idle";
+  const empty =
+    (historyState === "idle" || historyState === "loaded") &&
+    turns.length === 0 &&
+    pending.length === 0 &&
+    !turnActive &&
+    (conversation?.pendingUserMessages.length ?? 0) === 0;
   const openExternalLink = useCallback((href: string) => void window.omo.openExternal(href), []);
   const openFile = useCallback(
     (path: string) => void window.omo.revealPath(resolveWorkspacePath(cwd ?? undefined, path)),
@@ -124,7 +130,8 @@ function Transcript({ threadId, cwd, turnActive }: { threadId: string; cwd: stri
 
   return (
     <div className={css.body}>
-      <div ref={scroll.scrollRef} className={css.scroll} role="region" aria-label={t("conversation.region")}>
+      {empty && <EmptyHero />}
+      <div ref={scroll.scrollRef} className={clsx(css.scroll, empty && css.scrollHidden)} role="region" aria-label={t("conversation.region")}>
         <div ref={scroll.contentRef} className={css.column}>
           {historyState === "loading" && <HistorySkeleton />}
           {historyState === "error" && <HistoryError threadId={threadId} message={conversation?.historyError ?? null} />}

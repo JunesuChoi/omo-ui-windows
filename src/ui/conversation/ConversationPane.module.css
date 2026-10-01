@@ -29,6 +29,15 @@
   container-type: inline-size;
 }
 
+/* An empty thread shows the EmptyHero line instead; the scroll region keeps its ref and reappears with the first item. */
+.scrollHidden {
+  flex: none;
+  height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  overflow: hidden;
+}
+
 .scroll::-webkit-scrollbar-track {
   margin: 2px;
 }

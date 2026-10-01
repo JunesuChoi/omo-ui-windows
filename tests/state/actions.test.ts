@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { OMO_INSTALL_COMMAND } from "../../shared/ipc";
-import type { BridgeStatus, HistoryResult, HistoryTurn, OmoBridgeApi, Preferences } from "../../shared/ipc";
+import type { BridgeStatus, HistoryResult, HistoryTurn, OmoBridgeApi, OpenTarget, OpenTargetId, Preferences } from "../../shared/ipc";
 import type {
   ClientMethod,
   ClientParams,
@@ -153,6 +153,12 @@ class FakeBridge implements OmoBridgeApi {
   async copyText(): Promise<void> {}
   async openExternal(): Promise<void> {}
   async revealPath(): Promise<void> {}
+  async listOpenTargets(): Promise<OpenTarget[]> {
+    return [{ id: "finder" }];
+  }
+  async openWorkspace(): Promise<OpenTargetId> {
+    return "finder";
+  }
 }
 
 function waitForState(store: AppStore, predicate: (state: AppState) => boolean, timeoutMs = 2_000): Promise<AppState> {
