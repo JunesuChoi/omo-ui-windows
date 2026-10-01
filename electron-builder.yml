@@ -18,6 +18,8 @@ extraResources:
     to: LICENSE
   - from: src/dsh/theme/Montserrat-OFL.txt
     to: Montserrat-OFL.txt
+  - from: src/dsh/theme/Geist-OFL.txt
+    to: Geist-OFL.txt
 mac:
   category: public.app-category.developer-tools
   target:

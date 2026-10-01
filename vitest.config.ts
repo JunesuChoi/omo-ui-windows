@@ -1,5 +1,9 @@
-import { defineConfig } from "vitest/config";
+import { defineConfig, mergeConfig } from "vitest/config";
+import viteConfig from "./vite.config";
 
-export default defineConfig({
-  test: { include: ["tests/**/*.test.ts"], environment: "node", testTimeout: 30000 },
-});
+export default mergeConfig(
+  viteConfig,
+  defineConfig({
+    test: { include: ["tests/**/*.test.ts"], environment: "node", testTimeout: 30000 },
+  }),
+);

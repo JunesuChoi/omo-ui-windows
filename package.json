@@ -43,6 +43,7 @@
     "electron": "^44.5.1",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
+    "geist": "^1.7.2",
     "immer": "^10.1.1",
     "katex": "^0.16.47",
     "mdast-util-from-markdown": "^2.0.3",
