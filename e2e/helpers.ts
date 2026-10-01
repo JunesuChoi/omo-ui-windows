@@ -192,10 +192,17 @@ export async function newSession(page: Page): Promise<string> {
     rows.map((row) => row.getAttribute("data-thread-id")),
   );
   await byTestId(page, TESTID.newSession).click();
-  const active = page.locator(`[data-testid="${TESTID.threadRow}"][aria-current="page"]`);
-  await expect(active).toHaveCount(1);
-  const threadId = await active.getAttribute("data-thread-id");
-  if (threadId === null || before.includes(threadId)) throw new Error("new session did not activate a new thread row");
+  const opened = await page.waitForFunction(
+    ({ rowTestId, known }) => {
+      const row = document.querySelector(`[data-testid="${rowTestId}"][aria-current="page"]`);
+      const id = row?.getAttribute("data-thread-id") ?? null;
+      return id !== null && !known.includes(id) ? id : null;
+    },
+    { rowTestId: TESTID.threadRow, known: before },
+    { timeout: 30_000 },
+  );
+  const threadId = await opened.jsonValue();
+  if (typeof threadId !== "string") throw new Error("new session did not activate a new thread row");
   await expect(byTestId(page, TESTID.composerInput)).toBeEnabled();
   return threadId;
 }
