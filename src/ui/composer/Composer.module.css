@@ -123,7 +123,7 @@
 
 .input {
   position: relative;
-  min-height: 36px;
+  min-height: calc(2 * var(--dsh-composer-line-height) + 4px);
   max-height: calc(var(--dsh-composer-max-lines) * var(--dsh-composer-line-height) + 4px);
   outline: none;
   resize: none;
