@@ -13,6 +13,7 @@ import type {
   RequestEnvelope,
 } from "../shared/ipc";
 import type { ClientMethod, ClientParams, ClientResult, RequestId, RpcNotification, RpcServerRequest } from "../shared/protocol";
+import { stripRemoteMethodPrefix } from "./ipc-errors";
 
 // The sandboxed preload can require only "electron", so the channel table is restated here; `satisfies` keeps it equal to IPC.
 const CHANNELS = {
@@ -36,6 +37,15 @@ const CHANNELS = {
   revealPath: "app:reveal-path",
 } as const satisfies typeof IPC;
 
+async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
+  try {
+    const result: T = await ipcRenderer.invoke(channel, ...args);
+    return result;
+  } catch (error) {
+    throw new Error(stripRemoteMethodPrefix(error instanceof Error ? error.message : String(error)));
+  }
+}
+
 function subscribe<T>(channel: string, listener: (payload: T) => void): () => void {
   const handler = (_event: IpcRendererEvent, payload: T): void => listener(payload);
   ipcRenderer.on(channel, handler);
@@ -45,29 +55,29 @@ function subscribe<T>(channel: string, listener: (payload: T) => void): () => vo
 }
 
 const api = {
-  getStatus: (): Promise<BridgeStatus> => ipcRenderer.invoke(CHANNELS.getStatus),
+  getStatus: (): Promise<BridgeStatus> => invoke(CHANNELS.getStatus),
   onStatus: (listener: (status: BridgeStatus) => void) => subscribe(CHANNELS.status, listener),
   async request<M extends ClientMethod>(method: M, params: ClientParams<M>): Promise<ClientResult<M>> {
-    const envelope: RequestEnvelope<ClientResult<M>> = await ipcRenderer.invoke(CHANNELS.request, method, params);
+    const envelope: RequestEnvelope<ClientResult<M>> = await invoke(CHANNELS.request, method, params);
     if (!envelope.ok) throw new Error(`${envelope.error.code}: ${envelope.error.message}`);
     return envelope.result;
   },
   onNotification: (listener: (notification: RpcNotification) => void) => subscribe(CHANNELS.notification, listener),
   onServerRequest: (listener: (request: RpcServerRequest) => void) => subscribe(CHANNELS.serverRequest, listener),
-  respond: (id: RequestId, result: unknown): Promise<void> => ipcRenderer.invoke(CHANNELS.respond, id, result),
-  restart: (): Promise<void> => ipcRenderer.invoke(CHANNELS.restart),
-  install: (): Promise<InstallResult> => ipcRenderer.invoke(CHANNELS.install),
+  respond: (id: RequestId, result: unknown): Promise<void> => invoke(CHANNELS.respond, id, result),
+  restart: (): Promise<void> => invoke(CHANNELS.restart),
+  install: (): Promise<InstallResult> => invoke(CHANNELS.install),
   onInstallLog: (listener: (line: InstallLogLine) => void) => subscribe(CHANNELS.installLog, listener),
-  loadHistory: (sessionPath: string): Promise<HistoryTurn[]> => ipcRenderer.invoke(CHANNELS.loadHistory, sessionPath),
+  loadHistory: (sessionPath: string): Promise<HistoryTurn[]> => invoke(CHANNELS.loadHistory, sessionPath),
   pickDirectory: (defaultPath?: string | null): Promise<string | null> =>
-    ipcRenderer.invoke(CHANNELS.pickDirectory, defaultPath ?? null),
-  getDiagnostics: (): Promise<Diagnostics> => ipcRenderer.invoke(CHANNELS.diagnostics),
-  getPreferences: (): Promise<Preferences> => ipcRenderer.invoke(CHANNELS.getPreferences),
-  setPreferences: (patch: Partial<Preferences>): Promise<Preferences> => ipcRenderer.invoke(CHANNELS.setPreferences, patch),
+    invoke(CHANNELS.pickDirectory, defaultPath ?? null),
+  getDiagnostics: (): Promise<Diagnostics> => invoke(CHANNELS.diagnostics),
+  getPreferences: (): Promise<Preferences> => invoke(CHANNELS.getPreferences),
+  setPreferences: (patch: Partial<Preferences>): Promise<Preferences> => invoke(CHANNELS.setPreferences, patch),
   onMenuCommand: (listener: (command: MenuCommand) => void) => subscribe(CHANNELS.menuCommand, listener),
-  copyText: (text: string): Promise<void> => ipcRenderer.invoke(CHANNELS.copyText, text),
-  openExternal: (url: string): Promise<void> => ipcRenderer.invoke(CHANNELS.openExternal, url),
-  revealPath: (target: string): Promise<void> => ipcRenderer.invoke(CHANNELS.revealPath, target),
+  copyText: (text: string): Promise<void> => invoke(CHANNELS.copyText, text),
+  openExternal: (url: string): Promise<void> => invoke(CHANNELS.openExternal, url),
+  revealPath: (target: string): Promise<void> => invoke(CHANNELS.revealPath, target),
   platform: process.platform,
 } satisfies OmoBridgeApi;
 
