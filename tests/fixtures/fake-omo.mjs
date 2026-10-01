@@ -24,6 +24,10 @@ const NOT_FOUND = -32601;
 const INVALID_REQUEST = -32600;
 const INVALID_PARAMS = -32602;
 const SERVER_ERROR = -32000;
+// FAKE_OMO_DEMO names a JSON file with scripted presentation content for scripts/readme-media.mjs:
+// { session?: { model, modelProvider }, models?: [...], scenes: [{ match, steps }], sideAnswers?: [{ match, reply, chunks?, chunkMs? }] }.
+// A turn whose text contains a scene's `match` plays its steps (runDemoScene); tests never set the variable.
+const DEMO = process.env.FAKE_OMO_DEMO === undefined ? null : JSON.parse(readFileSync(process.env.FAKE_OMO_DEMO, "utf8"));
 
 const threads = new Map();
 const pendingResponses = new Map();
@@ -245,8 +249,8 @@ const threadView = (record, includeTurns) => ({ ...record.thread, turns: include
 
 const sessionResult = (record) => ({
   thread: threadView(record, true),
-  model: "alpha",
-  modelProvider: "fake",
+  model: DEMO?.session?.model ?? "alpha",
+  modelProvider: DEMO?.session?.modelProvider ?? "fake",
   cwd: record.thread.cwd,
   reasoningEffort: "medium",
 });
@@ -437,19 +441,143 @@ async function runSide(record, turn, text) {
   const question = (/\nSide question: ([\s\S]*)$/.exec(text)?.[1] ?? "").trim();
   const users = [...text.matchAll(/<user>\n([\s\S]*?)\n<\/user>/g)].map((match) => match[1]);
   const assistants = [...text.matchAll(/<assistant>\n/g)].length;
-  const reply = users.length === 0
-    ? `Side answer to "${question}" without main context.`
-    : `Side answer to "${question}" from ${users.length + assistants} main messages; the first main request was "${users[0]}".`;
+  const demo = DEMO?.sideAnswers?.find((entry) => question.includes(entry.match));
+  const reply = demo !== undefined
+    ? demo.reply
+    : users.length === 0
+      ? `Side answer to "${question}" without main context.`
+      : `Side answer to "${question}" from ${users.length + assistants} main messages; the first main request was "${users[0]}".`;
   const item = openAgentMessage(turn);
-  for (const chunk of splitInto(reply, 3)) {
+  for (const chunk of splitInto(reply, demo?.chunks ?? 3)) {
     appendAgentDelta(turn, item, chunk);
-    await sleep(turn, 40);
+    await sleep(turn, demo?.chunkMs ?? 40);
   }
   closeAgentMessage(record, turn, item, "stop");
 }
 
+/** A DAG run in the omo.dag.updated fields; counts, edges and waves are derived from the scripted nodes. */
+function demoRun(dag, at) {
+  const counts = { total: dag.nodes.length, pending: 0, blocked: 0, scheduled: 0, running: 0, completed: 0, failed: 0, cancelled: 0, skipped: 0 };
+  for (const node of dag.nodes) counts[node.state] += 1;
+  const byId = new Map(dag.nodes.map((node) => [node.id, node]));
+  const depth = (node) => Math.max(-1, ...(node.depends_on ?? []).map((id) => depth(byId.get(id)))) + 1;
+  const waves = [];
+  for (const node of dag.nodes) (waves[depth(node)] ??= []).push(node.id);
+  const started = (state) => state === "running" || state === "completed" || state === "failed";
+  return {
+    run_id: dag.run_id ?? "demo-run", run_key: dag.run_key ?? "demo", name: dag.name, status: dag.status ?? "running",
+    created_at: at, updated_at: at, counts,
+    nodes: dag.nodes.map((node) => ({
+      depends_on: [], attempt: 1, created_at: at,
+      ...(started(node.state) ? { started_at: at } : {}),
+      ...(node.state === "completed" || node.state === "failed" ? { completed_at: at } : {}),
+      ...node,
+    })),
+    edges: dag.nodes.flatMap((node) => (node.depends_on ?? []).map((from) => ({ from, to: node.id }))),
+    waves: waves.map((nodeIds, index) => ({ index, node_ids: nodeIds })),
+  };
+}
+
+/** A child task in the omo.task.updated fields; `live_progress.elapsedMs` backdates its start. */
+function demoTask(task, at) {
+  const { live_progress: progress, ...rest } = task;
+  return {
+    execution_mode: "in-process", depth: 1, created_at: at, updated_at: at,
+    residency_state: task.status === "running" ? "resident" : "disposed",
+    ...rest,
+    ...(progress === undefined ? {} : { live_progress: { ...progress, started_at: Date.now() - (progress.elapsedMs ?? 0) } }),
+  };
+}
+
+/**
+ * Plays one FAKE_OMO_DEMO scene. Steps: { wait }, { reasoning }, { item, done?, ms? } (any wire item, completed
+ * with `done`), { command: { command, output, exitCode, ms?, approval?, cwd? } }, { question }, { todo: phases, durationMs? },
+ * { goal }, { dag }, { dagActivity }, { tasks }, { say, chunks?, chunkMs? } ("{{answer}}" becomes the last
+ * question's answer) and { hold } (waits for fake.advance or an interrupt).
+ */
+async function runDemoScene(record, turn, scene) {
+  const threadId = record.thread.id;
+  const extension = (name, data) => notify("extension_event", { type: "extension_event", threadId, name, data });
+  let answer = "";
+  for (const step of scene.steps) {
+    const at = new Date().toISOString();
+    if ("wait" in step) await sleep(turn, step.wait);
+    else if ("reasoning" in step) {
+      const item = { type: "reasoning", id: nextItemId(turn), summary: [], content: [] };
+      startItem(turn, item);
+      for (const delta of splitInto(step.reasoning, 4)) {
+        notify("item/reasoning/textDelta", { threadId, turnId: turn.wire.id, itemId: item.id, delta, contentIndex: 0 });
+        await sleep(turn, 60);
+      }
+      item.content = [step.reasoning];
+      finishItem(turn, item);
+    } else if ("item" in step) {
+      const item = { id: nextItemId(turn), ...step.item };
+      startItem(turn, item);
+      await sleep(turn, step.ms ?? 0);
+      Object.assign(item, step.done ?? {});
+      finishItem(turn, item);
+    } else if ("command" in step) {
+      const { command, output, exitCode, ms, approval, cwd = record.thread.cwd } = step.command;
+      const item = { type: "commandExecution", id: nextItemId(turn), command, cwd, status: "inProgress", aggregatedOutput: null, exitCode: null, durationMs: null };
+      startItem(turn, item);
+      const startedAtMs = Date.now();
+      let accepted = true;
+      if (approval !== undefined) {
+        const response = await askClient(turn, `approval-${item.id}`, "item/commandExecution/requestApproval", {
+          threadId, turnId: turn.wire.id, itemId: item.id, startedAtMs, command, cwd,
+          availableDecisions: ["accept", "acceptForSession", "decline", "cancel"], ...approval,
+        });
+        accepted = isRecord(response) && (response.decision === "accept" || response.decision === "acceptForSession");
+      }
+      await sleep(turn, accepted ? ms ?? 0 : 0);
+      Object.assign(item, accepted
+        ? { status: "completed", aggregatedOutput: output, exitCode, durationMs: Date.now() - startedAtMs }
+        : { status: "declined", durationMs: Date.now() - startedAtMs });
+      finishItem(turn, item);
+    } else if ("question" in step) {
+      const response = await askClient(turn, `user-input-${turn.itemSeq}`, "item/tool/requestUserInput", {
+        threadId, turnId: turn.wire.id, itemId: `question-${turn.itemSeq}`,
+        questions: [{ id: "q1", isOther: true, isSecret: false, multiSelect: false, ...step.question }],
+        waitForAnswer: true, timeoutMs: 600000, autoResolutionMs: null,
+      });
+      answer = firstAnswer(response);
+    } else if ("todo" in step) {
+      const tool = { type: "dynamicToolCall", id: nextItemId(turn), namespace: null, tool: "todo", arguments: { op: "init" }, status: "inProgress", contentItems: null, success: null, durationMs: null };
+      startItem(turn, tool);
+      recordEntry(record, assistantEntry([{ type: "toolCall", id: tool.id, name: "todo", arguments: tool.arguments }], "toolUse"));
+      recordEntry(record, { type: "custom", customType: "senpi.todo-state", data: { schema: "v2", phases: step.todo } });
+      recordEntry(record, toolResultEntry(tool.id, "todo", "Todo saved", false));
+      Object.assign(tool, { status: "completed", success: true, contentItems: [{ type: "inputText", text: "Todo saved" }], durationMs: step.durationMs ?? 0 });
+      finishItem(turn, tool);
+    } else if ("goal" in step) {
+      record.goal = { threadId, tokenBudget: null, tokensUsed: 0, timeUsedSeconds: 0, createdAt: nowSec(), updatedAt: nowSec(), ...step.goal };
+      notify("thread/goal/updated", { threadId, turnId: null, goal: record.goal });
+    } else if ("dag" in step) extension("omo.dag.updated", { parent_session_id: threadId, runs: [demoRun(step.dag, at)] });
+    else if ("dagActivity" in step) extension("omo.dag.activity", { schemaVersion: 1, at, ...step.dagActivity });
+    else if ("tasks" in step) extension("omo.task.updated", { parent_session_id: threadId, tasks: step.tasks.map((task) => demoTask(task, at)) });
+    else if ("say" in step) {
+      const item = openAgentMessage(turn);
+      for (const chunk of splitInto(step.say.replaceAll("{{answer}}", answer), step.chunks ?? 8)) {
+        appendAgentDelta(turn, item, chunk);
+        await sleep(turn, step.chunkMs ?? 60);
+      }
+      closeAgentMessage(record, turn, item, "stop");
+    } else if ("hold" in step) {
+      await guard(turn, new Promise((resolve) => {
+        record.advanceLive = () => {
+          record.advanceLive = null;
+          resolve();
+        };
+      }));
+    } else throw new Error(`unknown demo step ${JSON.stringify(step)}`);
+  }
+}
+
 function runScenario(record, turn, text) {
   if (text.startsWith(SIDE_MARKER)) return runSide(record, turn, text);
+  const scene = DEMO?.scenes?.find((candidate) => text.includes(candidate.match));
+  if (scene !== undefined) return runDemoScene(record, turn, scene);
   if (text.includes("SCENARIO:omo-live")) return runLive(record, turn);
   if (text === "SCENARIO:skills-history") {
     const item = openAgentMessage(turn);
@@ -646,10 +774,10 @@ async function runTurn(record, turn, input, clientId) {
 
 // ---- request handlers ---------------------------------------------------------------------
 
-const MODELS = [
+const MODELS = (DEMO?.models ?? [
   { id: "fake/alpha", model: "alpha", displayName: "Fake Alpha", isDefault: true },
   { id: "fake/beta", model: "beta", displayName: "Fake Beta", isDefault: false },
-].map((model) => ({
+]).map((model) => ({
   ...model,
   description: "",
   hidden: false,

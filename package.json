@@ -26,6 +26,7 @@
     "package:mac:dir": "npm run build && electron-builder --mac --arm64 --dir",
     "install:app": "bash scripts/install-app.sh",
     "icon": "node scripts/render-icon.mjs",
+    "screenshots": "npm run build && node scripts/readme-media.mjs",
     "postinstall": "node node_modules/electron/install.js"
   },
   "devDependencies": {
