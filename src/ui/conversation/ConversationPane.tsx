@@ -1,3 +1,173 @@
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import clsx from "clsx";
+import {
+  Button,
+  IconChevronDownOutlineRegular,
+  MarkdownDelegateProvider,
+  StateDot,
+  TextShimmer,
+} from "@deepseek-ai/dsh-client-ui-primitives";
+import { resolveWorkspacePath } from "@deepseek-ai/dsh-util-workspace-path";
+import type { ThreadItem } from "../../../shared/protocol";
+import { useT } from "../../i18n";
+import type { Conversation, ConversationTurn, PendingRequest } from "../../state";
+import { selectActiveConversation, selectIsTurnActive, selectPendingRequestsForThread } from "../../state";
+import { useActions, useAppSelector } from "../app-context";
+import { TESTID } from "../testids";
+import { ApprovalCard } from "./ApprovalCard";
+import { ConversationHeader } from "./ConversationHeader";
+import { EmptyHero } from "./EmptyHero";
+import { QuestionCard } from "./QuestionCard";
+import { RenderBoundary } from "./RenderBoundary";
+import { TurnView } from "./TurnView";
+import { NO_IMAGES, UserBubble } from "./UserBubble";
+import { useStickToBottom } from "./use-stick-to-bottom";
+import css from "./ConversationPane.module.css";
+
+const NO_TURNS: readonly ConversationTurn[] = [];
+
+function requestKey(request: PendingRequest): string {
+  return `${request.kind}:${String(request.id)}`;
+}
+
+function relatedItem(conversation: Conversation | null, turnId: string, itemId: string): ThreadItem | null {
+  const turn = conversation?.turns.find((candidate) => candidate.id === turnId);
+  return turn?.items.find((entry) => entry.item.id === itemId)?.item ?? null;
+}
+
+function HistorySkeleton() {
+  const t = useT();
+  return (
+    <div className={css.skeleton} role="status" aria-label={t("conversation.history.loading")}>
+      <span className={clsx(css.skeletonBlock, css.skeletonBubble)} />
+      <span className={clsx(css.skeletonBlock, css.skeletonLine)} />
+      <span className={clsx(css.skeletonBlock, css.skeletonLine)} />
+      <span className={clsx(css.skeletonBlock, css.skeletonLine)} />
+    </div>
+  );
+}
+
+function HistoryError({ threadId, message }: { threadId: string; message: string | null }) {
+  const t = useT();
+  const actions = useActions();
+  return (
+    <div className={css.historyError} data-testid={TESTID.historyError} role="alert">
+      <StateDot state="error" className={css.historyErrorDot} />
+      <div className={css.historyErrorCopy}>
+        <span className={css.historyErrorTitle}>{t("conversation.history.error")}</span>
+        {message !== null && message !== "" && <span className={css.historyErrorMessage}>{message}</span>}
+      </div>
+      <Button variant="outline" size="sm" onClick={() => void actions.openThread(threadId)}>
+        {t("conversation.history.retry")}
+      </Button>
+    </div>
+  );
+}
+
+function WorkingIndicator() {
+  const t = useT();
+  return (
+    <div className={css.working} data-testid={TESTID.workingIndicator} role="status">
+      <StateDot state="ongoing" size={12} />
+      <TextShimmer active>{t("conversation.working")}</TextShimmer>
+    </div>
+  );
+}
+
+function PendingRequestCard({
+  request,
+  conversation,
+  cwd,
+}: {
+  request: PendingRequest;
+  conversation: Conversation | null;
+  cwd: string | null;
+}) {
+  if (request.kind === "userInput") return <QuestionCard request={request} />;
+  return (
+    <ApprovalCard
+      request={request}
+      related={relatedItem(conversation, request.params.turnId, request.params.itemId)}
+      cwd={cwd}
+    />
+  );
+}
+
+function Transcript({ threadId, cwd, turnActive }: { threadId: string; cwd: string | null; turnActive: boolean }) {
+  const t = useT();
+  const conversation = useAppSelector(selectActiveConversation);
+  const pending = useAppSelector((state) => selectPendingRequestsForThread(state, threadId));
+  const scroll = useStickToBottom();
+  const turns = conversation?.turns ?? NO_TURNS;
+  const activeTurnId = conversation?.activeTurnId ?? null;
+  const activeTurn = useMemo(
+    () => (activeTurnId === null ? null : (turns.find((turn) => turn.id === activeTurnId) ?? null)),
+    [turns, activeTurnId],
+  );
+  const streaming = activeTurn?.items.some((entry) => entry.streaming) ?? false;
+  const showWorking = turnActive && !streaming && pending.length === 0;
+  const historyState = conversation?.historyState ?? "idle";
+  const openExternalLink = useCallback((href: string) => void window.omo.openExternal(href), []);
+  const openFile = useCallback(
+    (path: string) => void window.omo.revealPath(resolveWorkspacePath(cwd ?? undefined, path)),
+    [cwd],
+  );
+  const { jumpToLatest } = scroll;
+  const seenRequests = useRef<ReadonlySet<string>>(new Set());
+  useEffect(() => {
+    const keys = new Set(pending.map(requestKey));
+    const arrived = [...keys].some((key) => !seenRequests.current.has(key));
+    seenRequests.current = keys;
+    if (arrived) jumpToLatest();
+  }, [pending, jumpToLatest]);
+
+  return (
+    <div className={css.body}>
+      <div ref={scroll.scrollRef} className={css.scroll} role="region" aria-label={t("conversation.region")}>
+        <div ref={scroll.contentRef} className={css.column}>
+          {historyState === "loading" && <HistorySkeleton />}
+          {historyState === "error" && <HistoryError threadId={threadId} message={conversation?.historyError ?? null} />}
+          <MarkdownDelegateProvider openExternalLink={openExternalLink} openFile={openFile}>
+            {turns.map((turn) => (
+              <TurnView key={turn.id} turn={turn} cwd={cwd} />
+            ))}
+          </MarkdownDelegateProvider>
+          {conversation?.pendingUserMessages.map((message) => (
+            <UserBubble key={message.clientId} text={message.text} images={NO_IMAGES} sending />
+          ))}
+          {showWorking && <WorkingIndicator />}
+          {pending.map((request) => (
+            <RenderBoundary key={requestKey(request)} label={`a ${request.kind} request`} resetKey={request}>
+              <PendingRequestCard request={request} conversation={conversation} cwd={cwd} />
+            </RenderBoundary>
+          ))}
+        </div>
+      </div>
+      {scroll.showJump && (
+        <button type="button" className={css.jump} onClick={scroll.jumpToLatest}>
+          <IconChevronDownOutlineRegular size={14} />
+          <span>{t("conversation.jumpToLatest")}</span>
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** The main conversation column: header strip, then the empty hero or the active thread's transcript. */
 export function ConversationPane() {
-  return null;
+  const threadId = useAppSelector((state) => state.activeThreadId);
+  const thread = useAppSelector((state) =>
+    state.activeThreadId === null ? null : (state.threads[state.activeThreadId] ?? null),
+  );
+  const turnActive = useAppSelector(selectIsTurnActive);
+  return (
+    <section className={css.root} data-testid={TESTID.conversation}>
+      <ConversationHeader active={threadId !== null} thread={thread} running={turnActive} />
+      {threadId === null ? (
+        <EmptyHero />
+      ) : (
+        <Transcript key={threadId} threadId={threadId} cwd={thread?.cwd ?? null} turnActive={turnActive} />
+      )}
+    </section>
+  );
 }
