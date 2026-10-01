@@ -100,6 +100,7 @@ function run(): void {
   });
 
   void app.whenReady().then(() => {
+    if (!app.isPackaged) app.dock?.setIcon(path.join(__dirname, "../build/icon.png"));
     const prefs = new PreferencesStore(app.getPath("userData"));
     installApplicationMenu(sendMenuCommand);
     registerIpc({ supervisor, prefs, getWindow: () => mainWindow, homeDir });

@@ -7,3 +7,4 @@ playwright-report/
 .omo/
 .DS_Store
 *.log
+build/icon.iconset/
