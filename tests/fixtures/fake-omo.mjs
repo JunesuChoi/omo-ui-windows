@@ -413,6 +413,13 @@ async function runFull(record, turn) {
 }
 
 function runScenario(record, turn, text) {
+  if (text.includes("SCENARIO:silent-error")) {
+    const entry = assistantEntry([{ type: "text", text: "" }], "error");
+    entry.message.errorMessage = "402: Insufficient Balance";
+    entry.message.model = "fake-model";
+    recordEntry(record, entry);
+    return;
+  }
   if (text.includes("SCENARIO:full")) return runFull(record, turn);
   if (text.includes("SCENARIO:slow")) return runSlow(record, turn);
   return runEcho(record, turn, text);

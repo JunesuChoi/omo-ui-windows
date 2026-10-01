@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { OMO_INSTALL_COMMAND } from "../../shared/ipc";
 import type { BridgeStatus, HistoryTurn, OmoBridgeApi, Preferences } from "../../shared/ipc";
 import type {
@@ -51,6 +51,8 @@ class FakeBridge implements OmoBridgeApi {
   readonly calls: Array<{ method: ClientMethod; params: unknown }> = [];
   readonly responses: Array<{ id: RequestId; result: unknown }> = [];
   readonly historyLoads: string[] = [];
+  history: () => Promise<HistoryTurn[]> = () => Promise.resolve([]);
+  private readonly notificationListeners = new Set<(notification: RpcNotification) => void>();
   readonly failing = new Set<ClientMethod>();
   status = bridgeStatus("starting");
   preferences: Preferences = { theme: "system", locale: "system", lastWorkspace: null, recentWorkspaces: [], modelId: null };
@@ -93,8 +95,12 @@ class FakeBridge implements OmoBridgeApi {
     this.statusListeners.add(listener);
     return () => this.statusListeners.delete(listener);
   }
-  onNotification(_listener: (notification: RpcNotification) => void): () => void {
-    return () => undefined;
+  onNotification(listener: (notification: RpcNotification) => void): () => void {
+    this.notificationListeners.add(listener);
+    return () => this.notificationListeners.delete(listener);
+  }
+  emitNotification(method: string, params: unknown): void {
+    for (const listener of this.notificationListeners) listener({ method, params });
   }
   onServerRequest(_listener: (request: RpcServerRequest) => void): () => void {
     return () => undefined;
@@ -109,9 +115,9 @@ class FakeBridge implements OmoBridgeApi {
   onInstallLog(): () => void {
     return () => undefined;
   }
-  async loadHistory(sessionPath: string): Promise<HistoryTurn[]> {
+  loadHistory(sessionPath: string): Promise<HistoryTurn[]> {
     this.historyLoads.push(sessionPath);
-    return [];
+    return this.history();
   }
   async pickDirectory(): Promise<string | null> {
     return null;
@@ -167,6 +173,143 @@ async function listThread(setupResult: ReturnType<typeof setup>): Promise<void> 
 }
 
 describe("createActions", () => {
+  const providerError = { message: "402: Insufficient Balance" };
+  const failedHistory = (completedAt: number | null = 5_000): HistoryTurn => ({
+    id: "history-1", status: "failed", error: providerError, items: [], startedAt: 4_000, completedAt,
+  });
+
+  async function reconcileContext() {
+    const context = setup();
+    await listThread(context);
+    const disconnect = context.actions.connect();
+    context.bridge.emitNotification("turn/started", { threadId: THREAD_ID, turn: runningTurn });
+    const complete = (items: Turn["items"] = [], error: Turn["error"] = null) =>
+      context.bridge.emitNotification("turn/completed", {
+        threadId: THREAD_ID, turn: { ...runningTurn, status: "completed", error, items },
+      });
+    return { ...context, disconnect, complete };
+  }
+
+  it("reconciles an empty completed turn once using the latest failed history error", async () => {
+    const context = await reconcileContext();
+    const history = Promise.resolve([
+      failedHistory(4_000),
+      { ...failedHistory(), id: "latest", error: { message: "latest failure" } },
+      { ...failedHistory(), id: "success", status: "completed" as const, error: null },
+    ]);
+    context.bridge.history = () => history;
+    context.complete([{ type: "userMessage", id: "u1", clientId: null, content: [] }]);
+    await history;
+    expect(context.store.getState().conversations[THREAD_ID]?.turns[0]).toMatchObject({
+      status: "completed", error: { message: "latest failure" },
+    });
+    context.complete();
+    expect(context.bridge.historyLoads).toEqual([SESSION_PATH]);
+    context.disconnect();
+  });
+
+  it.each(["agentMessage", "reasoning", "dynamicToolCall", "commandExecution", "fileChange"] as const)(
+    "never reads history when the turn produced %s",
+    async (type) => {
+      const context = await reconcileContext();
+      const items: Turn["items"] = type === "agentMessage"
+        ? [{ type, id: "a", text: "answer", phase: null }]
+        : type === "reasoning"
+          ? [{ type, id: "a", summary: [], content: ["thinking"] }]
+          : type === "dynamicToolCall"
+            ? [{ type, id: "a", namespace: null, tool: "eval", arguments: {}, status: "completed", contentItems: [], success: true, durationMs: 1 }]
+            : type === "commandExecution"
+              ? [{ type, id: "a", command: "pwd", cwd: "/tmp", status: "completed", aggregatedOutput: "/tmp", exitCode: 0, durationMs: 1 }]
+              : [{ type, id: "a", changes: [], status: "completed" }];
+      context.bridge.emitNotification("item/completed", { threadId: THREAD_ID, turnId: runningTurn.id, item: items[0] });
+      context.complete();
+      expect(context.bridge.historyLoads).toEqual([]);
+      context.disconnect();
+    },
+  );
+
+  it.each([3_000, 2_999, null])("allows only two seconds of skew (completion %s)", async (completedAt) => {
+    const context = await reconcileContext();
+    const history = Promise.resolve([failedHistory(completedAt)]);
+    context.bridge.history = () => history;
+    context.complete();
+    await history;
+    expect(context.store.getState().conversations[THREAD_ID]?.turns[0]?.error)
+      .toEqual(completedAt === 3_000 ? providerError : null);
+    context.disconnect();
+  });
+
+  it("does not read history for an agent message present only in the completion", async () => {
+    const context = await reconcileContext();
+    context.complete([{ type: "agentMessage", id: "a", text: "answer", phase: null }]);
+    expect(context.bridge.historyLoads).toEqual([]);
+    context.disconnect();
+  });
+
+  it("does not read history when the turn already reports an error", async () => {
+    const context = await reconcileContext();
+    context.complete([], providerError);
+    expect(context.bridge.historyLoads).toEqual([]);
+    context.disconnect();
+  });
+
+  it("does not read history when the session path is unknown", async () => {
+    const context = await reconcileContext();
+    context.store.dispatch({ type: "thread/opened", thread: makeThread(THREAD_ID, { path: null }), resumed: true });
+    context.complete();
+    expect(context.bridge.historyLoads).toEqual([]);
+    context.disconnect();
+  });
+
+  it("leaves the turn unchanged when history has no failed error", async () => {
+    const context = await reconcileContext();
+    const history = Promise.resolve([
+      { ...failedHistory(), error: null },
+      { ...failedHistory(), id: "success", status: "completed" as const },
+    ]);
+    context.bridge.history = () => history;
+    context.complete();
+    const before = context.store.getState().conversations[THREAD_ID]?.turns[0];
+    await history;
+    expect(context.store.getState().conversations[THREAD_ID]?.turns[0]).toBe(before);
+    context.disconnect();
+  });
+
+  it.each(["deleted", "replaced", "disconnected"] as const)("ignores history after the turn is %s", async (stale) => {
+    const context = await reconcileContext();
+    let resolveHistory: (turns: HistoryTurn[]) => void = () => { throw new Error("not initialized"); };
+    const history = new Promise<HistoryTurn[]>((resolve) => { resolveHistory = resolve; });
+    context.bridge.history = () => history;
+    context.complete();
+    if (stale === "deleted") context.bridge.emitNotification("thread/deleted", { threadId: THREAD_ID });
+    else if (stale === "replaced") context.store.dispatch({ type: "history/loaded", threadId: THREAD_ID, turns: [
+      { ...failedHistory(), id: runningTurn.id, error: null },
+    ] });
+    else context.disconnect();
+    const before = context.store.getState().conversations[THREAD_ID];
+    resolveHistory([failedHistory()]);
+    await history;
+    expect(context.store.getState().conversations[THREAD_ID]).toBe(before);
+    context.disconnect();
+  });
+
+  it("logs read failures without pushing a notice", async () => {
+    const context = await reconcileContext();
+    const error = new Error("history unavailable");
+    const history = Promise.reject<HistoryTurn[]>(error);
+    context.bridge.history = () => history;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      context.complete();
+      await history.catch(() => undefined);
+      expect(warn).toHaveBeenCalledWith("Could not reconcile provider error from session history", error);
+      expect(context.store.getState().notices).toEqual([]);
+    } finally {
+      warn.mockRestore();
+      context.disconnect();
+    }
+  });
+
   it("resumes a non-resumed thread before starting the turn with the client message id", async () => {
     const context = setup();
     await listThread(context);

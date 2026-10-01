@@ -12,6 +12,7 @@ export const TESTID = {
   conversationHeader: "conversation-header",
   emptyHero: "empty-hero",
   turn: "turn",
+  turnError: "turn-error",
   userMessage: "user-message",
   assistantMessage: "assistant-message",
   reasoning: "reasoning",

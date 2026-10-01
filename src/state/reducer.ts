@@ -5,6 +5,7 @@ import {
   toSummary,
   updateConversation,
   updateExistingConversation,
+  updateTurn,
   wireItems,
 } from "./conversation";
 import { applyNotification } from "./notifications";
@@ -143,6 +144,12 @@ export function reduce(state: AppState, event: AppEvent): AppState {
         historyState: "error",
         historyError: event.message,
       }));
+    case "turn/errorReconciled":
+      return updateExistingConversation(state, event.threadId, (conversation) =>
+        updateTurn(conversation, event.turn.id, (turn) =>
+          turn === event.turn ? { ...turn, error: event.error } : turn,
+        ),
+      );
     case "user/messageSent": {
       const { clientId, text, sentAtMs } = event;
       const queued = updateConversation(state, event.threadId, (conversation) => ({

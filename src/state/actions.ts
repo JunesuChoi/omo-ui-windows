@@ -1,7 +1,8 @@
 import type { BridgeStatus, OmoBridgeApi } from "../../shared/ipc";
-import type { ApprovalDecision, ReasoningEffort, RequestId, ThreadSessionResult, UserInput } from "../../shared/protocol";
+import type { ApprovalDecision, ReasoningEffort, RequestId, RpcNotification, ThreadSessionResult, UserInput } from "../../shared/protocol";
 import type { AppStore } from "./store";
 import type { NoticeCode, SessionModel } from "./types";
+import { parseNotification } from "./wire";
 
 const THREAD_PAGE_SIZE = 50;
 const RECENT_WORKSPACE_LIMIT = 10;
@@ -85,6 +86,38 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
     connect() {
       let active = true;
       let statusPushed = false;
+      const reconciled = new Set<string>();
+      const reconcile = async (notification: RpcNotification): Promise<void> => {
+        const parsed = parseNotification(notification);
+        if (parsed?.method !== "turn/completed") return;
+        const { threadId, turn: reported } = parsed.params;
+        const state = store.getState();
+        const turn = state.conversations[threadId]?.turns.find((entry) => entry.id === reported.id);
+        const path = state.threads[threadId]?.path;
+        if (
+          turn === undefined || turn.origin !== "live" || turn.error !== null ||
+          turn.startedAtMs === null || path == null ||
+          reported.items.some((item) => item.type !== "userMessage") ||
+          turn.items.some((entry) => entry.item.type !== "userMessage")
+        ) return;
+        const key = JSON.stringify([threadId, turn.id, turn.startedAtMs]);
+        const startedAtMs = turn.startedAtMs;
+        if (reconciled.has(key)) return;
+        reconciled.add(key);
+        try {
+          const history = await bridge.loadHistory(path);
+          if (!active) return;
+          const failed = history.findLast((entry) =>
+            entry.status === "failed" && entry.error !== null &&
+            entry.completedAt !== null && entry.completedAt >= startedAtMs - 2000,
+          );
+          if (failed?.error != null) {
+            store.dispatch({ type: "turn/errorReconciled", threadId, turn, error: failed.error });
+          }
+        } catch (error) {
+          console.warn("Could not reconcile provider error from session history", error);
+        }
+      };
       const applyStatus = (status: BridgeStatus): void => {
         if (!active) return;
         const wasConnected = store.getState().bridge?.state === "connected";
@@ -100,7 +133,9 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
           applyStatus(status);
         }),
         bridge.onNotification((notification) => {
-          if (active) store.dispatch({ type: "rpc/notification", notification, receivedAtMs: now() });
+          if (!active) return;
+          store.dispatch({ type: "rpc/notification", notification, receivedAtMs: now() });
+          void reconcile(notification);
         }),
         bridge.onServerRequest((request) => {
           if (active) store.dispatch({ type: "rpc/serverRequest", request, receivedAtMs: now() });

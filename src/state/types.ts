@@ -118,6 +118,7 @@ export type AppEvent =
   | { type: "history/loading"; threadId: string }
   | { type: "history/loaded"; threadId: string; turns: HistoryTurn[] }
   | { type: "history/failed"; threadId: string; message: string }
+  | { type: "turn/errorReconciled"; threadId: string; turn: ConversationTurn; error: TurnError }
   | { type: "user/messageSent"; threadId: string; clientId: string; text: string; sentAtMs: number }
   | { type: "user/messageFailed"; threadId: string; clientId: string; message: string }
   | { type: "composer/modelSelected"; modelId: string | null; effort: ReasoningEffort | null }

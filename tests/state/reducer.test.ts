@@ -88,6 +88,21 @@ describe("probe replay", () => {
 describe("reduce", () => {
   const threadId = "thread-1";
 
+  it("sets a reconciled error without changing the reported status", () => {
+    const state = replay([
+      turnStarted(threadId, "t1"),
+      notification("turn/completed", { threadId, turn: { id: "t1", items: [], status: "completed", error: null } }),
+    ]);
+    const turn = state.conversations[threadId]?.turns[0];
+    if (turn === undefined) throw new Error("missing turn");
+    const error = { message: "402: Insufficient Balance" };
+    const next = reduce(state, { type: "turn/errorReconciled", threadId, turn, error });
+    expect(next.conversations[threadId]?.turns[0]).toEqual({ ...turn, error });
+    expect(reduce(next, { type: "turn/errorReconciled", threadId, turn, error })).toBe(next);
+    const deleted = reduce(state, notification("thread/deleted", { threadId }));
+    expect(reduce(deleted, { type: "turn/errorReconciled", threadId, turn, error })).toBe(deleted);
+  });
+
   it("drops the pending user message echoed with the same clientId", () => {
     const state = replay([
       { type: "user/messageSent", threadId, clientId: "c1", text: "same", sentAtMs: 1 },

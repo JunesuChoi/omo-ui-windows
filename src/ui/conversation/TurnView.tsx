@@ -95,7 +95,7 @@ function TurnErrorRow({ error, retrying }: { error: TurnError | null; retrying: 
   const message = typeof error?.message === "string" ? error.message.trim() : "";
   const details = typeof error?.additionalDetails === "string" ? error.additionalDetails.trim() : "";
   return (
-    <div className={css.errorRow} role="status" data-retrying={retrying || undefined} data-flow="error">
+    <div className={css.errorRow} data-testid={TESTID.turnError} role="status" data-retrying={retrying || undefined} data-flow="error">
       <StateDot state={retrying ? "warning" : "error"} className={css.errorDot} />
       <div className={css.errorCopy}>
         <span className={css.errorTitle}>
