@@ -59,12 +59,12 @@ Type `/` at the start of the message or after a space. The menu lists the skills
 
 When omo fans work out, for example with mass-ulw, the **Activity** chip in the header counts running work. Open it to see each DAG run with its waves and node states, the live activity of running nodes, and every child task with its agent, model, progress and result. omo's todo list and the session goal sit above the composer.
 
-<table>
-  <tr>
-    <td width="50%"><img src="docs/media/activity.png" alt="Activity panel: the checkout DAG run with three waves, one completed node, two running nodes with their current activity and one blocked node"></td>
-    <td width="50%"><img src="docs/media/activity-tasks.png" alt="Activity panel scrolled to the child tasks, each with its category, model, status and progress"></td>
-  </tr>
-</table>
+<p align="center">
+  <img src="docs/media/activity.png" width="760" alt="Activity panel: the checkout DAG run with three waves, one completed node, two running nodes with their current activity and one blocked node">
+</p>
+<p align="center">
+  <img src="docs/media/activity-tasks.png" width="760" alt="Activity panel scrolled to the child tasks, each with its category, model, status and progress">
+</p>
 
 <p align="center">
   <img src="docs/media/todo-goal.png" width="760" alt="The expanded todo list with Discovery, Build and Verify phases, and the goal strip showing the objective and time used">
@@ -179,7 +179,7 @@ xattr -dr com.apple.quarantine "/Applications/OmO UI.app"
 ## How it works
 
 ```mermaid
-flowchart LR
+flowchart TB
   subgraph App["OmO UI.app"]
     R["Renderer<br/>React + DeepSeek Harness GUI"] <-->|"allowlisted IPC"| M["Electron main"]
   end
@@ -209,7 +209,7 @@ npm run test:e2e       # Playwright-Electron against a fake omo
 OMO_UI_E2E_REAL=1 npm run test:e2e:real   # Playwright-Electron against the real omo
 npm run package:mac:dir   # build only release/mac-arm64/OmO UI.app (no DMG/zip)
 npm run icon           # re-render build/icon.icns and build/icon.png from build/icon.svg
-npm run screenshots    # rebuild and re-capture the README media in docs/media (needs ffmpeg for the GIF)
+npm run screenshots    # re-capture docs/media from the built app (ffmpeg encodes the GIF)
 ```
 
 `npm run screenshots` drives the built app with Playwright against the demo scenes in `scripts/readme-demo.mjs`, played by `tests/fixtures/fake-omo.mjs` when `FAKE_OMO_DEMO` is set. `node scripts/readme-media.mjs --only hero,migrate,korean,onboarding,gif` re-captures a subset. The real-omo screenshot is not produced by the script; it was taken from a session on the installed omo in a throwaway workspace.
