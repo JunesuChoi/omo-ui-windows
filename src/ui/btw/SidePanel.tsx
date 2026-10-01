@@ -247,6 +247,7 @@ function SidePicker({ sides, selected, onSelect }: { sides: readonly SideChat[];
       open={open}
       portal
       align="start"
+      className={css.pickerMenu}
       items={items}
       selectedId={selected?.id ?? NEW_SIDE_ID}
       onClose={() => setOpen(false)}

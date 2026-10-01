@@ -236,6 +236,13 @@ test("another main thread shows only its own side chats, and a side error stays 
   await expect(byTestId(page, TESTID.noticeToast)).toHaveCount(0);
   await shot(page, "C002-error");
 
+  await send(page, `/btw ${"does a long side question still leave room for the close button? ".repeat(3).trim()}`);
+  await expect(sideAnswer(page)).toContainText("Side answer to");
+  const panelBox = await panel(page).boundingBox();
+  const closeBox = await byTestId(page, TESTID.sideClose).boundingBox();
+  expect(panelBox !== null && closeBox !== null && closeBox.x + closeBox.width <= panelBox.x + panelBox.width).toBe(true);
+  await shot(page, "C002-long-question");
+
   await threadRow(page, mainId).getByRole("button").first().click();
   await expect(threadRow(page, mainId)).toHaveAttribute("aria-current", "page");
   await expect(byTestId(page, TESTID.sidePicker)).toContainText("BTW #");
