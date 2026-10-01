@@ -24,7 +24,7 @@ export const PROMPTS = {
 export const SETTLED = {
   checkout: "as soon as both lanes land.",
   migrate: "GROUP BY status;",
-  chips: "one lane per module",
+  chips: "verified by its own tests.",
   korean: "시나리오를 추가하겠습니다.",
   side: "nothing is ready to merge yet.",
 };
