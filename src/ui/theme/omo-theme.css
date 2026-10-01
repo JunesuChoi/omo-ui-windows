@@ -43,9 +43,13 @@ body {
   --dsw-omo-accent-green: #22c55e;
   --dsw-omo-accent-green-hover: #16a34a;
   --dsw-omo-keyword-gradient: linear-gradient(90deg, var(--dsw-omo-accent-orange), var(--dsw-omo-accent-green));
-  /* Initials badges: hue comes from the row (--dsh-badge-hue, 0-359), saturation and lightness are fixed here. */
-  --dsw-omo-badge-fill: hsl(var(--dsh-badge-hue, 40) 70% 52% / 0.18);
-  --dsw-omo-badge-ink: hsl(var(--dsh-badge-hue, 40) 60% 36%);
+  /* Initials badges: the row supplies the hue (--dsh-badge-hue, 0-359) and WorkspaceBadge.module.css composes
+     hsl() from it with these saturation, lightness and alpha values. */
+  --dsw-omo-badge-saturation: 70%;
+  --dsw-omo-badge-fill-lightness: 52%;
+  --dsw-omo-badge-fill-alpha: 0.18;
+  --dsw-omo-badge-ink-saturation: 60%;
+  --dsw-omo-badge-ink-lightness: 36%;
   --dsw-omo-sidebar-glow: rgba(249, 115, 22, 0.05);
 }
 
@@ -72,7 +76,9 @@ body[data-ds-dark-theme] {
   --dsw-alias-scrollbar-bg-l2: #404040;
   --dsw-alias-bg-skeleton: rgba(255, 255, 255, 0.06);
 
-  --dsw-omo-badge-fill: hsl(var(--dsh-badge-hue, 40) 70% 50% / 0.22);
-  --dsw-omo-badge-ink: hsl(var(--dsh-badge-hue, 40) 80% 62%);
+  --dsw-omo-badge-fill-lightness: 50%;
+  --dsw-omo-badge-fill-alpha: 0.22;
+  --dsw-omo-badge-ink-saturation: 80%;
+  --dsw-omo-badge-ink-lightness: 62%;
   --dsw-omo-sidebar-glow: rgba(249, 115, 22, 0.07);
 }

@@ -4,8 +4,8 @@ import type { IconProps } from "@deepseek-ai/dsh-client-ui-primitives";
 export function BrandMark({ size = 20, className }: IconProps) {
   return (
     <svg viewBox="0 0 1024 1024" width={size} height={size} className={className} aria-hidden>
-      <rect x="100" y="100" width="824" height="824" rx="185" fill="#18191d" />
-      <rect x="102" y="102" width="820" height="820" rx="183" fill="none" stroke="#ffffff" strokeOpacity="0.14" strokeWidth="6" />
+      <rect x="100" y="100" width="824" height="824" rx="185" fill="#26272d" />
+      <rect x="112" y="112" width="800" height="800" rx="175" fill="none" stroke="#ffffff" strokeOpacity="0.22" strokeWidth="24" />
       <g fill="none" stroke="#f3efe6" strokeWidth="60">
         <circle cx="352" cy="420" r="98" />
         <circle cx="672" cy="420" r="98" />
