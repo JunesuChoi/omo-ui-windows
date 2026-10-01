@@ -107,7 +107,7 @@ If omo is missing, OmO UI says so and offers the official installer, or the comm
 
 ### 한국어
 
-Every label is available in Korean. Choose the language in Settings, or follow the system language.
+Every label in the window is available in Korean; the macOS menu bar stays in English. Choose the language in Settings, or follow the system language.
 
 <p align="center">
   <img src="docs/media/korean.png" alt="OmO UI with the Korean interface running a ulw-loop session about adding Apple Pay">
