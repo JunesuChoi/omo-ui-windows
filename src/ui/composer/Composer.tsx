@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import type { KeyboardEvent, MouseEvent, SyntheticEvent } from "react";
 import clsx from "clsx";
 import { IconFolderOpenOutlineRegular, Tooltip } from "@deepseek-ai/dsh-client-ui-primitives";
+import { ArrowUpGlyph, LockOpenGlyph } from "../glyphs";
 import { selectIsTurnActive, selectSkillCatalog } from "../../state";
 import type { AppState, SkillCatalog } from "../../state";
 import { useT } from "../../i18n";
@@ -12,6 +13,7 @@ import { updatePreferences, useUiState } from "../ui-state";
 import { ModelPicker } from "./ModelPicker";
 import { SkillMenu } from "./SkillMenu";
 import type { SkillMenuStatus } from "./SkillMenu";
+import { detectMagicKeyword, segmentDraft } from "./magic-keyword";
 import { acceptSkill, detectSkillTrigger, pruneSelected, rankSkills, serializeSkillDraft } from "./skill-draft";
 import type { SkillDraft } from "./skill-draft";
 import css from "./Composer.module.css";
@@ -32,17 +34,6 @@ function menuStatus(hasThread: boolean, loaded: boolean, catalog: SkillCatalog |
 function basename(path: string): string {
   const segments = path.split("/").filter((segment) => segment.length > 0);
   return segments.at(-1) ?? path;
-}
-
-function SendIcon() {
-  return (
-    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>
-      <path
-        d="M8.3125 0.980183C8.66767 1.0531 8.97902 1.20418 9.2627 1.43233C9.48724 1.61297 9.73029 1.85793 9.97949 2.10714L14.707 6.83468L13.293 8.24874L9 3.95577V15.0417H7V3.95577L2.70703 8.24874L1.29297 6.83468L6.02051 2.10714C6.26971 1.85793 6.51277 1.61297 6.7373 1.43233C6.97662 1.23986 7.28445 1.04402 7.6875 0.980183C7.8973 0.947006 8.1031 0.95516 8.3125 0.980183Z"
-        fill="currentColor"
-      />
-    </svg>
-  );
 }
 
 function StopIcon() {
@@ -82,6 +73,7 @@ export function Composer() {
   const [limitReached, setLimitReached] = useState(false);
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const mirrorRef = useRef<HTMLDivElement | null>(null);
   const composingRef = useRef(false);
   const pendingCaret = useRef<number | null>(null);
   const drafts = useRef(new Map<string, SkillDraft>());
@@ -188,6 +180,14 @@ export function Composer() {
 
   const blank = text.trim() === "";
   const canSend = connected && !blank && !busy;
+  const keyword = detectMagicKeyword(text);
+  const segments = useMemo(() => segmentDraft(text), [text]);
+  const syncMirrorScroll = (): void => {
+    const mirror = mirrorRef.current;
+    const el = inputRef.current;
+    if (mirror !== null && el !== null) mirror.scrollTop = el.scrollTop;
+  };
+  useLayoutEffect(syncMirrorScroll, [text]);
 
   const pickWorkspace = async (): Promise<string | null> => {
     const dir = await window.omo.pickDirectory(workspace);
@@ -267,7 +267,12 @@ export function Composer() {
   return (
     <div className={css.root}>
       <ConversationDock />
-      <div className={clsx(css.card, !connected && css.cardDisabled)} data-testid={TESTID.composer} data-composer-card="">
+      <div
+        className={clsx(css.card, !connected && css.cardDisabled, keyword !== null && css.cardMagic)}
+        data-testid={TESTID.composer}
+        data-composer-card=""
+        data-keyword={keyword?.keyword}
+      >
         {menuOpen && (
           <SkillMenu
             listboxId={listboxId}
@@ -287,6 +292,18 @@ export function Composer() {
           />
         )}
         <div className={css.scroll}>
+          <div ref={mirrorRef} className={css.mirror} aria-hidden>
+            {segments.map((segment, index) =>
+              segment.kind === "keyword" ? (
+                <span key={index} className={css.keyword} data-testid={TESTID.keywordHighlight}>
+                  {segment.text}
+                </span>
+              ) : (
+                <span key={index}>{segment.text}</span>
+              ),
+            )}
+            {"\u200b"}
+          </div>
           <textarea
             ref={inputRef}
             className={css.input}
@@ -315,10 +332,25 @@ export function Composer() {
               setCaret(event.currentTarget.selectionStart);
             }}
             onKeyDown={onKeyDown}
+            onScroll={syncMirrorScroll}
           />
         </div>
+        {keyword !== null && (
+          <div className={css.keywordHint} data-testid={TESTID.keywordHint} role="status">
+            <span className={css.keywordHintName}>{keyword.text}</span>
+            {t("composer.keyword.hint")}
+          </div>
+        )}
         <div className={css.row}>
           <div className={css.tools}>
+            {connected && (
+              <Tooltip label={t("composer.fullAccess.tooltip")} side="top" align="center" delayMs={300}>
+                <span className={css.statusChip} data-testid={TESTID.fullAccessChip} tabIndex={0}>
+                  <LockOpenGlyph size={14} className={css.chipIcon} />
+                  <span className={css.chipLabel}>{t("composer.fullAccess.label")}</span>
+                </span>
+              </Tooltip>
+            )}
             {activeThreadId === null && (
               <button
                 type="button"
@@ -361,7 +393,7 @@ export function Composer() {
                 onMouseDown={keepFocus}
                 onClick={() => void submit()}
               >
-                <SendIcon />
+                <ArrowUpGlyph size={16} />
               </button>
             </Tooltip>
           </div>

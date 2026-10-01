@@ -14,11 +14,11 @@
   --dsh-scrollbar-width: 6px;
   --dsh-scrollbar-thumb-border: 2px;
   --dsh-scrollbar-track-margin: 12px;
-  padding: 4px;
+  padding: 6px;
   display: flex;
   flex-direction: column;
-  border: 0;
-  --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-xl);
   box-shadow: var(--dsw-elevation-prominent);
 }
 
@@ -36,8 +36,8 @@
   gap: 2px;
   flex: none;
   width: 100%;
-  min-height: 34px;
-  padding: 6px 8px;
+  min-height: 40px;
+  padding: 8px 10px;
   border: none;
   border-radius: var(--dsw-radius-md);
   background: transparent;
