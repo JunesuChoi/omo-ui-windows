@@ -253,13 +253,32 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
     }
   };
 
-  /** Starts and registers a side thread; on failure restores the question as the new-side draft and reports in the panel. */
+  /** Deletes a side thread whose main thread was deleted or archived while its thread/start was pending; it is never registered or sent a turn. */
+  const discardOrphanSide = async (sideId: string, cwd: string): Promise<void> => {
+    try {
+      await bridge.request("thread/delete", { threadId: sideId });
+      store.dispatch({ type: "rpc/notification", notification: { method: "thread/deleted", params: { threadId: sideId } }, receivedAtMs: now() });
+    } catch (error) {
+      fail(error);
+    } finally {
+      store.dispatch({ type: "btw/started", cwd, side: null });
+    }
+  };
+
+  /**
+   * Starts and registers a side thread. When the main thread disappeared while thread/start was pending, the new side
+   * thread is deleted instead. On failure restores the question as the new-side draft and reports in the panel.
+   */
   const startSideThread = async (parentId: string, cwd: string, question: string, context: boolean): Promise<SideChat | null> => {
     const { modelId } = store.getState().composer;
     store.dispatch({ type: "btw/starting", cwd });
     try {
       const result = await bridge.request("thread/start", modelId === null ? { cwd } : { cwd, model: modelId });
       if (!isThread(result.thread)) throw new Error("omo returned a malformed thread/start result");
+      if (store.getState().threads[parentId] === undefined) {
+        await discardOrphanSide(result.thread.id, cwd);
+        return null;
+      }
       const side: SideChat = { id: result.thread.id, parentId, question, createdAtMs: now(), context };
       store.dispatch({ type: "btw/started", cwd, side });
       store.dispatch({ type: "thread/opened", thread: result.thread, resumed: true, session: sessionOf(result) });

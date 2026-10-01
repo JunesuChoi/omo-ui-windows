@@ -790,6 +790,29 @@ describe("side chats", () => {
     disconnect();
   });
 
+  it("deletes a side thread whose main thread was deleted while its thread/start was pending", async () => {
+    const context = sideSetup();
+    await openMain(context);
+    const start = deferred<unknown>();
+    context.bridge.started = () => start.promise;
+    const asking = context.actions.askNewSide(request);
+    context.store.dispatch(notification("thread/started", { thread: makeThread(SIDE_ID, { cwd: CWD }) }));
+    await context.actions.deleteThread(THREAD_ID);
+    start.resolve({ thread: makeThread(SIDE_ID, { cwd: CWD }), model: "claude-fable-5", modelProvider: "anthropic", cwd: CWD, reasoningEffort: null });
+    expect(await asking).toBe(false);
+    expect(context.bridge.calls.filter((call) => call.method === "thread/delete").map((call) => call.params)).toEqual([
+      { threadId: THREAD_ID },
+      { threadId: SIDE_ID },
+    ]);
+    expect(context.bridge.methods()).not.toContain("turn/start");
+    expect(context.bridge.methods()).not.toContain("thread/name/set");
+    const { btw, threads } = context.store.getState();
+    expect(btw.sides).toEqual({});
+    expect(btw.pending).toEqual({});
+    expect(btw.unclaimed).toEqual({});
+    expect(threads[SIDE_ID]).toBeUndefined();
+  });
+
   it("loads a retained side chat's history through thread/read without activating it", async () => {
     const stored = { id: "side-0", parentId: THREAD_ID, question: "old", createdAtMs: 1, context: true };
     const context = sideSetup(memorySideStorage([stored]));
