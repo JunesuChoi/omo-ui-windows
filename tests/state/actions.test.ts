@@ -26,6 +26,7 @@ import {
 } from "../../src/state";
 import type { SideStorage } from "../../src/state";
 import type { AppState, AppStore } from "../../src/state";
+import { projectTitleText } from "../../src/ui/conversation/skill-text";
 import { makeThread, notification } from "./helpers";
 
 type Handlers = { [M in ClientMethod]?: (params: ClientParams<M>) => ClientResult<M> | Promise<ClientResult<M>> };
@@ -226,6 +227,13 @@ describe("createActions", () => {
     await context.actions.refreshThreads();
     expect(Object.keys(context.store.getState().threads)).toEqual([THREAD_ID]);
     expect(context.store.getState().threadsCursor).toBeNull();
+  });
+  it("drops a listed thread whose name is not a string so every sidebar title renders", async () => {
+    const context = setup();
+    context.bridge.threadList = () => ({ data: [{ ...makeThread("bad"), name: 42 }, makeThread("good", { name: "Fix login" })], nextCursor: null });
+    await context.actions.refreshThreads();
+    const listed = selectThreadsByWorkspace(context.store.getState()).flatMap((group) => group.threads);
+    expect(listed.map((thread) => projectTitleText(thread.name ?? ""))).toEqual(["Fix login"]);
   });
   it("reports a malformed thread/start result instead of storing the thread", async () => {
     const context = setup();

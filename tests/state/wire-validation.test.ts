@@ -63,4 +63,10 @@ describe("result validation", () => {
     expect(isSkill({ name: "x", description: "d", scope: "user", enabled: true, interface: { shortDescription: 42 } })).toBe(false);
     expect(isSkill({ name: "x", description: "d", scope: "user", enabled: true, interface: { displayName: "X", shortDescription: "s" } })).toBe(true);
   });
+
+  it("rejects a thread whose name or path is mistyped and accepts null ones", () => {
+    expect(isThread({ ...makeThread("T"), name: 42 })).toBe(false);
+    expect(isThread({ ...makeThread("T"), path: 7 })).toBe(false);
+    expect(isThread({ ...makeThread("T"), name: null, path: null })).toBe(true);
+  });
 });

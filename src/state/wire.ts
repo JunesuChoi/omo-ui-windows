@@ -56,7 +56,7 @@ function isTurnError(value: unknown): value is TurnError {
   return isObject(value) && isString(value["message"]);
 }
 
-/** Validates a thread from a notification or a request result; the reducer reads these fields without further checks. */
+/** Validates a thread from a notification or a request result, including the optional name and path the UI renders and loads; the reducer reads these fields without further checks. */
 export function isThread(value: unknown): value is Thread {
   return (
     isObject(value) &&
@@ -64,7 +64,9 @@ export function isThread(value: unknown): value is Thread {
     isString(value["cwd"]) &&
     isString(value["preview"]) &&
     typeof value["updatedAt"] === "number" &&
-    isThreadStatus(value["status"])
+    isThreadStatus(value["status"]) &&
+    isOptionalString(value["name"]) &&
+    isOptionalString(value["path"])
   );
 }
 
