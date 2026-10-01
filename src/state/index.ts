@@ -9,6 +9,7 @@ export type {
   NoticeCode,
   PendingRequest,
   PendingUserMessage,
+  SessionModel,
   ThreadSummary,
 } from "./types";
 export { createInitialState, reduce } from "./reducer";
@@ -17,7 +18,9 @@ export type { AppStore } from "./store";
 export { createActions } from "./actions";
 export type { ActionOptions, AppActions } from "./actions";
 export {
+  resolveComposerModel,
   selectActiveConversation,
+  selectActiveSessionModel,
   selectIsTurnActive,
   selectPendingRequestsForThread,
   selectThreadsByWorkspace,

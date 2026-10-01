@@ -17,7 +17,8 @@ import { useT } from "../../i18n";
 import type { MessageKey } from "../../i18n";
 import { useActions, useAppSelector } from "../app-context";
 import { TESTID } from "../testids";
-import { filterGroups, groupModels, resolveCurrentModel, resolveEffort } from "./model-groups";
+import { resolveComposerModel, selectActiveSessionModel } from "../../state";
+import { filterGroups, groupModels, resolveEffort } from "./model-groups";
 import css from "./ModelPicker.module.css";
 
 const SEARCH_THRESHOLD = 8;
@@ -44,6 +45,7 @@ export function ModelPicker({ disabled }: { disabled: boolean }) {
   const models = useAppSelector(selectModels);
   const modelId = useAppSelector((state) => state.composer.modelId);
   const effort = useAppSelector((state) => state.composer.effort);
+  const session = useAppSelector(selectActiveSessionModel);
 
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -61,13 +63,13 @@ export function ModelPicker({ disabled }: { disabled: boolean }) {
   const showSearch = models.length > SEARCH_THRESHOLD;
   const visibleGroups = useMemo(() => filterGroups(groups, showSearch ? query : ""), [groups, query, showSearch]);
   const visibleModels = useMemo(() => visibleGroups.flatMap((group) => group.models), [visibleGroups]);
-  const current = resolveCurrentModel(models, modelId);
-  const currentEffort = resolveEffort(current, effort);
+  const current = resolveComposerModel(models, modelId, session);
+  const currentEffort = current === null && effort === null ? (session?.reasoningEffort ?? null) : resolveEffort(current, effort);
   const efforts = current?.supportedReasoningEfforts ?? [];
   const activeIndex = visibleModels.length === 0 ? -1 : Math.min(highlighted, visibleModels.length - 1);
 
   const effortLabel = currentEffort === null ? null : t(EFFORT_KEY[currentEffort]);
-  const modelLabel = current?.displayName ?? t("composer.model.none");
+  const modelLabel = current?.displayName ?? session?.model ?? t("composer.model.none");
   const triggerAria =
     current === null
       ? t("composer.model.select")

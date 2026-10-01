@@ -232,3 +232,11 @@ describe("thread preview", () => {
     expect(state.threads["t-preview"]?.preview).toBe("first");
   });
 });
+
+describe("thread session model", () => {
+  it("keeps the model omo reported when a thread is opened", () => {
+    const session = { modelProvider: "anthropic-subscription", model: "claude-opus-5-5", reasoningEffort: "medium" as const };
+    const state = replay([{ type: "thread/opened", thread: makeThread("t-model"), resumed: true, session }]);
+    expect(state.conversations["t-model"]?.session).toEqual(session);
+  });
+});

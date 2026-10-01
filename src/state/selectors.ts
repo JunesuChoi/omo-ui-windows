@@ -1,4 +1,5 @@
-import type { AppState, Conversation, PendingRequest, ThreadSummary } from "./types";
+import type { Model } from "../../shared/protocol";
+import type { AppState, Conversation, PendingRequest, SessionModel, ThreadSummary } from "./types";
 
 export interface WorkspaceGroup {
   cwd: string;
@@ -43,6 +44,28 @@ export function selectPendingRequestsForThread(state: AppState, threadId: string
   const result = state.pendingRequests.filter((request) => request.threadId === threadId);
   pendingCache.set(threadId, { source: state.pendingRequests, result });
   return result;
+}
+
+export function selectActiveSessionModel(state: AppState): SessionModel | null {
+  return selectActiveConversation(state)?.session ?? null;
+}
+
+/**
+ * The model the composer targets: the user's pick when it is in the catalog, else the active thread's model as omo
+ * reported it (matched by provider/model id, then by model name), else null so the UI names omo's own default.
+ * model/list marks one default per provider, so its isDefault flags cannot identify the model omo will run.
+ */
+export function resolveComposerModel(models: readonly Model[], modelId: string | null, session: SessionModel | null): Model | null {
+  if (modelId !== null) {
+    const selected = models.find((model) => model.id === modelId);
+    if (selected !== undefined) return selected;
+  }
+  if (session === null) return null;
+  return (
+    models.find((model) => model.id === `${session.modelProvider}/${session.model}`) ??
+    models.find((model) => model.model === session.model) ??
+    null
+  );
 }
 
 export function selectIsTurnActive(state: AppState, threadId: string | null = state.activeThreadId): boolean {

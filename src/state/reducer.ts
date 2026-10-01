@@ -117,7 +117,11 @@ export function reduce(state: AppState, event: AppEvent): AppState {
       return applyThreadsListed(state, event);
     case "thread/opened": {
       const opened = upsertThread(state, toSummary(event.thread));
-      return updateConversation(opened, event.thread.id, (conversation) => ({ ...conversation, resumed: event.resumed }));
+      return updateConversation(opened, event.thread.id, (conversation) => ({
+        ...conversation,
+        resumed: event.resumed,
+        ...(event.session === undefined ? {} : { session: event.session }),
+      }));
     }
     case "thread/activated": {
       const { threadId } = event;

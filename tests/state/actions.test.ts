@@ -180,6 +180,7 @@ describe("createActions", () => {
     });
     const conversation = context.store.getState().conversations[THREAD_ID];
     expect(conversation?.resumed).toBe(true);
+    expect(conversation?.session).toEqual({ modelProvider: "anthropic", model: "claude-fable-5", reasoningEffort: null });
     expect(conversation?.pendingUserMessages).toEqual([{ clientId: "id-1", text: "hello", sentAtMs: 5_000 }]);
   });
 

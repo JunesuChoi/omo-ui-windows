@@ -39,15 +39,6 @@ export function filterGroups(groups: readonly ModelGroup[], query: string): Mode
     .filter((group) => group.models.length > 0);
 }
 
-/** The model the composer currently targets: the selected id when it is in the catalog, else the default model. */
-export function resolveCurrentModel(models: readonly Model[], modelId: string | null): Model | null {
-  if (modelId !== null) {
-    const selected = models.find((model) => model.id === modelId);
-    if (selected !== undefined) return selected;
-  }
-  return models.find((model) => model.isDefault) ?? null;
-}
-
 /** The effort a model runs with: the composer's choice when the model supports it, else the model's default. */
 export function resolveEffort(model: Model | null, effort: ReasoningEffort | null): ReasoningEffort | null {
   if (model === null) return effort;

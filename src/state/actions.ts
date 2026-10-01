@@ -1,7 +1,7 @@
 import type { BridgeStatus, OmoBridgeApi } from "../../shared/ipc";
-import type { ApprovalDecision, ReasoningEffort, RequestId, UserInput } from "../../shared/protocol";
+import type { ApprovalDecision, ReasoningEffort, RequestId, ThreadSessionResult, UserInput } from "../../shared/protocol";
 import type { AppStore } from "./store";
-import type { NoticeCode } from "./types";
+import type { NoticeCode, SessionModel } from "./types";
 
 const THREAD_PAGE_SIZE = 50;
 const RECENT_WORKSPACE_LIMIT = 10;
@@ -30,6 +30,10 @@ export interface AppActions {
   answerUserInput(id: RequestId, answers: Record<string, string[]>, comment?: string): Promise<void>;
   selectModel(modelId: string | null, effort: ReasoningEffort | null): Promise<void>;
   dismissNotice(id: string): void;
+}
+
+function sessionOf(result: ThreadSessionResult): SessionModel {
+  return { modelProvider: result.modelProvider, model: result.model, reasoningEffort: result.reasoningEffort };
 }
 
 function errorMessage(error: unknown): string {
@@ -140,7 +144,7 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
       try {
         const result = await bridge.request("thread/start", modelId === null ? { cwd } : { cwd, model: modelId });
         const threadId = result.thread.id;
-        store.dispatch({ type: "thread/opened", thread: result.thread, resumed: true });
+        store.dispatch({ type: "thread/opened", thread: result.thread, resumed: true, session: sessionOf(result) });
         store.dispatch({ type: "thread/activated", threadId });
         store.dispatch({ type: "history/loaded", threadId, turns: [] });
         await rememberWorkspace(cwd);
@@ -174,7 +178,7 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
       try {
         if (conversation?.resumed !== true) {
           const resumed = await bridge.request("thread/resume", { threadId });
-          store.dispatch({ type: "thread/opened", thread: resumed.thread, resumed: true });
+          store.dispatch({ type: "thread/opened", thread: resumed.thread, resumed: true, session: sessionOf(resumed) });
         }
         store.dispatch({ type: "user/messageSent", threadId, clientId, text, sentAtMs: now() });
         const { modelId, effort } = store.getState().composer;

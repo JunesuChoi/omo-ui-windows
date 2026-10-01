@@ -27,6 +27,13 @@ export interface ThreadSummary {
   source: string | null;
 }
 
+/** The model omo reported for a thread in its thread/start or thread/resume result. */
+export interface SessionModel {
+  modelProvider: string;
+  model: string;
+  reasoningEffort: ReasoningEffort | null;
+}
+
 export interface ConversationItem {
   item: ThreadItem;
   streaming: boolean;
@@ -59,6 +66,8 @@ export interface Conversation {
   /** True once this app-server process has loaded the thread through thread/start or thread/resume. */
   resumed: boolean;
   pendingUserMessages: PendingUserMessage[];
+  /** The model omo reported in this thread's latest thread/start or thread/resume result. */
+  session?: SessionModel;
 }
 
 export type PendingRequest =
@@ -104,7 +113,7 @@ export type AppEvent =
   | { type: "rpc/serverRequestAnswered"; id: RequestId }
   | { type: "models/loaded"; models: Model[] }
   | { type: "threads/listed"; threads: Thread[]; nextCursor: string | null; append: boolean }
-  | { type: "thread/opened"; thread: Thread; resumed: boolean }
+  | { type: "thread/opened"; thread: Thread; resumed: boolean; session?: SessionModel }
   | { type: "thread/activated"; threadId: string | null }
   | { type: "history/loading"; threadId: string }
   | { type: "history/loaded"; threadId: string; turns: HistoryTurn[] }
