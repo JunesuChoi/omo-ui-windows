@@ -43,6 +43,9 @@ xattr -dr com.apple.quarantine "/Applications/OmO UI.app"
 - **New session**: choose a workspace folder; omo runs with that folder as its working directory. Recent folders are remembered.
 - **Sidebar**: lists every omo session, including sessions you started in the terminal. Selecting one loads its full history.
 - **Conversation**: answers stream as they are written. Reasoning, tool calls (commands, file edits, searches) and their results appear as cards.
+- **Skills**: type `/` at the start of a message or after a space to list the skills omo can run in the session's workspace; the list loads once the session has started. Use the arrow keys and Enter or Tab, or click, to insert a skill; Escape closes the list. Pick up to five skills for one message; OmO UI sends them to omo as `/skill:name` commands in front of your text.
+- **omo's own message parts**: sent and restored messages show invoked skills as chips, with their instructions behind **Show skill instructions**. Reminders and pointers that omo adds to a message fold into an **omo context** chip, and session titles show `/skill` names instead of the injected text.
+- **Provider errors**: when the model provider fails (for example a timeout or a billing error), the turn shows the error omo recorded instead of staying empty.
 - **Approvals and questions**: when omo asks for permission or asks you a question, the app shows it inline; answer to let the turn continue.
 - **Stop and steering**: Stop interrupts the running turn. Sending a message while a turn runs steers it.
 - **Model picker**: shows the model omo is running and switches models for the next turns.
@@ -78,6 +81,8 @@ Environment variables (defined in `shared/ipc.ts`):
 
 - **omo not found**: install it with `curl -fsSL https://get.omo.dev/install.sh | bash`, or use the install button on the onboarding screen. Settings shows the binary in use and where it was found. To force a specific binary, launch with `OMO_UI_OMO_BIN=/path/to/omo open -n "/Applications/OmO UI.app"`.
 - **Works in the terminal but not in the app**: apps launched from Finder do not inherit your terminal's environment. OmO UI reads your login shell's environment, so export `PATH` and API keys in a login-shell file (`~/.zprofile` or `~/.zshrc` for zsh), then use **Restart omo** in Settings.
+- **A skill is missing from the `/` list**: the list comes from omo for the session's workspace after the session starts. Workspace skills live in `<workspace>/.omo/skills/<name>/SKILL.md`. Skills that omo could not load are counted in a warning row at the bottom of the list.
+- **omo terminal commands such as `/model` or `/compact`**: they exist only in omo's terminal UI; use the model picker in the composer instead.
 - **Reset preferences**: quit the app and delete `~/Library/Application Support/OmO UI/preferences.json` (theme, language, recent workspaces, model). omo's own sessions and configuration are not stored there.
 
 ## Credits
