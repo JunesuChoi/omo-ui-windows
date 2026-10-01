@@ -49,7 +49,13 @@ class FakeClient implements SupervisedClient {
     return () => undefined;
   }
   emitMalformed(line: string): void {
-    this.malformedListener?.(line, new Error("Unexpected token"));
+    let parseError = new Error("unreachable");
+    try {
+      JSON.parse(line);
+    } catch (error) {
+      if (error instanceof Error) parseError = error;
+    }
+    this.malformedListener?.(line, parseError);
   }
   onExit(listener: (info: ExitInfo) => void): () => void {
     this.exitListener = listener;
@@ -148,7 +154,8 @@ describe("OmoSupervisor", () => {
     try {
       await supervisor.start();
       client.emitMalformed("secret prompt text {");
-      expect(warn.mock.calls).toEqual([["[omo-ui] ignored a malformed line from omo app-server (20 characters): Unexpected token"]]);
+      expect(warn.mock.calls).toEqual([["[omo-ui] ignored a malformed line from omo app-server (20 characters, SyntaxError)"]]);
+      expect(JSON.stringify(warn.mock.calls)).not.toContain("secret");
     } finally {
       warn.mockRestore();
       await supervisor.stop();
