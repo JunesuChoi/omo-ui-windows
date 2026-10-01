@@ -9,13 +9,14 @@ import type {
   RequestId,
   RpcNotification,
   RpcServerRequest,
+  SkillsListResponse,
   Turn,
 } from "../../shared/protocol";
-import { createActions, createAppStore } from "../../src/state";
+import { createActions, createAppStore, selectSkillCatalog } from "../../src/state";
 import type { AppState, AppStore } from "../../src/state";
 import { makeThread, notification } from "./helpers";
 
-type Handlers = { [M in ClientMethod]?: (params: ClientParams<M>) => ClientResult<M> };
+type Handlers = { [M in ClientMethod]?: (params: ClientParams<M>) => ClientResult<M> | Promise<ClientResult<M>> };
 
 const THREAD_ID = "thread-1";
 const SESSION_PATH = "/Users/me/.omo/agent/sessions/thread-1.jsonl";
@@ -54,12 +55,21 @@ class FakeBridge implements OmoBridgeApi {
   history: () => Promise<HistoryTurn[]> = () => Promise.resolve([]);
   private readonly notificationListeners = new Set<(notification: RpcNotification) => void>();
   readonly failing = new Set<ClientMethod>();
+  skills: (cwds: string[]) => Promise<SkillsListResponse> = async (cwds) => ({
+    data: cwds.map((cwd) => ({ cwd, skills: [{
+      name: "ulw-loop", description: "Loop", path: "/skills/ulw-loop/SKILL.md", scope: "system", enabled: true,
+    }], errors: [] })),
+  });
   status = bridgeStatus("starting");
   preferences: Preferences = { theme: "system", locale: "system", lastWorkspace: null, recentWorkspaces: [], modelId: null };
   private readonly statusListeners = new Set<(status: BridgeStatus) => void>();
   private readonly handlers: Handlers = {
     "model/list": () => ({ data: [model], nextCursor: null }),
     "thread/list": () => ({ data: [makeThread(THREAD_ID, { path: SESSION_PATH })], nextCursor: null }),
+    "thread/start": ({ cwd }) => ({
+      thread: makeThread(THREAD_ID, { cwd }), model: "claude-fable-5", modelProvider: "anthropic", cwd, reasoningEffort: null,
+    }),
+    "skills/list": ({ cwds }) => this.skills(cwds ?? []),
     "thread/resume": ({ threadId }) => ({
       thread: makeThread(threadId, { path: SESSION_PATH }),
       model: "claude-fable-5",
@@ -165,6 +175,12 @@ function setup() {
   let counter = 0;
   const actions = createActions(store, bridge, { now: () => 5_000, newId: () => `id-${++counter}` });
   return { store, bridge, actions };
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
+  let settle: (value: T) => void = () => { throw new Error("not initialized"); };
+  const promise = new Promise<T>((resolve) => { settle = resolve; });
+  return { promise, resolve: (value) => settle(value) };
 }
 
 async function listThread(setupResult: ReturnType<typeof setup>): Promise<void> {
@@ -315,8 +331,8 @@ describe("createActions", () => {
     await listThread(context);
     await context.actions.openThread(THREAD_ID);
     expect(await context.actions.sendMessage("hello")).toBe(true);
-    expect(context.bridge.methods()).toEqual(["thread/resume", "turn/start"]);
-    expect(context.bridge.calls[1]?.params).toEqual({
+    expect(context.bridge.methods()).toEqual(["thread/resume", "skills/list", "turn/start"]);
+    expect(context.bridge.calls[2]?.params).toEqual({
       threadId: THREAD_ID,
       input: [{ type: "text", text: "hello", text_elements: [] }],
       clientUserMessageId: "id-1",
@@ -389,5 +405,138 @@ describe("createActions", () => {
     expect(context.bridge.methods().sort()).toEqual(["model/list", "thread/list"]);
     expect(context.bridge.calls.find((call) => call.method === "thread/list")?.params).toEqual({ limit: 50 });
     expect(state.threadOrder).toEqual([THREAD_ID]);
+  });
+});
+
+describe("skill catalog actions", () => {
+  const cwd = "/tmp/work/project";
+
+  it("never requests a fallback catalog before a thread is loaded", async () => {
+    const context = setup();
+    await listThread(context);
+    await context.actions.openThread(THREAD_ID);
+    await context.actions.ensureSkills(cwd);
+    await context.actions.loadSkills(cwd, { force: true });
+    expect(context.bridge.methods()).not.toContain("skills/list");
+    expect(selectSkillCatalog(context.store.getState(), cwd).status).toBe("idle");
+  });
+
+  it("loads once after thread start and keeps subsequent ensures idempotent", async () => {
+    const context = setup();
+    expect(await context.actions.newThread(cwd)).toBe(THREAD_ID);
+    await context.actions.ensureSkills(cwd);
+    await context.actions.openThread(THREAD_ID);
+    expect(context.bridge.methods()).toEqual(["thread/start", "skills/list"]);
+    expect(context.bridge.calls[1]?.params).toEqual({ cwds: [cwd] });
+    expect(selectSkillCatalog(context.store.getState(), cwd)).toMatchObject({ status: "ready", skills: [{ name: "ulw-loop" }] });
+  });
+
+  it("loads after lazy resume before sending canonical text", async () => {
+    const context = setup();
+    await listThread(context);
+    await context.actions.openThread(THREAD_ID);
+    expect(await context.actions.sendMessage("/skill:ulw-loop /skill:plan do work")).toBe(true);
+    expect(context.bridge.methods()).toEqual(["thread/resume", "skills/list", "turn/start"]);
+    expect(context.bridge.calls[2]?.params).toMatchObject({
+      input: [{ type: "text", text: "/skill:ulw-loop /skill:plan do work", text_elements: [] }],
+    });
+  });
+
+  it("does not request again while an ensure is loading", async () => {
+    const context = setup();
+    context.store.dispatch({ type: "thread/opened", thread: makeThread(THREAD_ID), resumed: true });
+    const pending = deferred<SkillsListResponse>();
+    context.bridge.skills = () => pending.promise;
+    const first = context.actions.ensureSkills(cwd);
+    await context.actions.ensureSkills(cwd);
+    expect(context.bridge.methods()).toEqual(["skills/list"]);
+    pending.resolve({ data: [{ cwd, skills: [], errors: [] }] });
+    await first;
+    expect(selectSkillCatalog(context.store.getState(), cwd).status).toBe("ready");
+  });
+
+  it("fences a stale result after an explicit forced reload", async () => {
+    const context = setup();
+    context.store.dispatch({ type: "thread/opened", thread: makeThread(THREAD_ID), resumed: true });
+    const pending = deferred<SkillsListResponse>();
+    context.bridge.skills = () => pending.promise;
+    const old = context.actions.loadSkills(cwd);
+    context.bridge.skills = async () => ({ data: [{ cwd, skills: [], errors: [] }] });
+    await context.actions.loadSkills(cwd, { force: true });
+    pending.resolve({ data: [{ cwd, skills: [], errors: [{ path: cwd, message: "stale" }] }] });
+    await old;
+    expect(context.bridge.calls[1]?.params).toEqual({ cwds: [cwd], forceReload: true });
+    expect(selectSkillCatalog(context.store.getState(), cwd)).toMatchObject({ status: "ready", errors: [] });
+  });
+
+  it("records a request failure and permits explicit retry", async () => {
+    const context = setup();
+    context.store.dispatch({ type: "thread/opened", thread: makeThread(THREAD_ID), resumed: true });
+    context.bridge.failing.add("skills/list");
+    await context.actions.loadSkills(cwd);
+    expect(selectSkillCatalog(context.store.getState(), cwd)).toMatchObject({
+      status: "error", errors: [{ path: cwd, message: "-32000: skills/list failed" }],
+    });
+    context.bridge.failing.delete("skills/list");
+    await context.actions.loadSkills(cwd);
+    expect(selectSkillCatalog(context.store.getState(), cwd).status).toBe("ready");
+  });
+
+  it("records a missing cwd response rather than showing an empty success", async () => {
+    const context = setup();
+    context.store.dispatch({ type: "thread/opened", thread: makeThread(THREAD_ID), resumed: true });
+    context.bridge.skills = async () => ({ data: [] });
+    await context.actions.ensureSkills(cwd);
+    expect(selectSkillCatalog(context.store.getState(), cwd)).toMatchObject({
+      status: "error", errors: [{ path: cwd, message: `skills/list returned no entry for ${cwd}` }],
+    });
+  });
+
+  it("invalidates every cwd and force reloads only the active loaded cwd", async () => {
+    const context = setup();
+    const disconnect = context.actions.connect();
+    await waitForState(context.store, (state) => state.bridge?.state === "starting");
+    await context.actions.newThread("/tmp/other");
+    context.store.dispatch({ type: "thread/opened", thread: makeThread(THREAD_ID), resumed: true });
+    context.store.dispatch({ type: "thread/activated", threadId: THREAD_ID });
+    await context.actions.ensureSkills(cwd);
+    context.bridge.calls.length = 0;
+    const ready = waitForState(context.store, (state) => selectSkillCatalog(state, cwd).status === "ready" &&
+      selectSkillCatalog(state, "/tmp/other").stale);
+    context.bridge.emitNotification("skills/changed", {});
+    await ready;
+    expect(context.bridge.calls).toEqual([{ method: "skills/list", params: { cwds: [cwd], forceReload: true } }]);
+    expect(selectSkillCatalog(context.store.getState(), "/tmp/other").status).toBe("idle");
+    disconnect();
+  });
+
+  it("refreshes an invalidated catalog when its loaded thread is reopened", async () => {
+    const context = setup();
+    await context.actions.newThread(cwd);
+    context.store.dispatch(notification("skills/changed", {}));
+    const ready = waitForState(context.store, (state) => selectSkillCatalog(state, cwd).status === "ready");
+    await context.actions.openThread(THREAD_ID);
+    await ready;
+    expect(context.bridge.calls.at(-1)).toEqual({ method: "skills/list", params: { cwds: [cwd], forceReload: true } });
+  });
+
+  it("clears loaded cwds on reconnect and ignores the previous process response", async () => {
+    const context = setup();
+    const disconnect = context.actions.connect();
+    await waitForState(context.store, (state) => state.bridge?.state === "starting");
+    await context.actions.newThread(cwd);
+    const pending = deferred<SkillsListResponse>();
+    context.bridge.skills = () => pending.promise;
+    const old = context.actions.loadSkills(cwd);
+    context.bridge.emitStatus(bridgeStatus("exited"));
+    context.bridge.emitStatus(bridgeStatus("connected"));
+    pending.resolve({ data: [{ cwd, skills: [], errors: [] }] });
+    await old;
+    await context.actions.ensureSkills(cwd);
+    expect(context.store.getState().skillCatalogs).toEqual({});
+    expect(context.store.getState().loadedSkillCwds).toEqual({});
+    expect(context.store.getState().conversations[THREAD_ID]?.resumed).toBe(false);
+    expect(context.bridge.methods().filter((method) => method === "skills/list")).toHaveLength(2);
+    disconnect();
   });
 });

@@ -10,6 +10,7 @@ export type {
   PendingRequest,
   PendingUserMessage,
   SessionModel,
+  SkillCatalog,
   ThreadSummary,
 } from "./types";
 export { createInitialState, reduce } from "./reducer";
@@ -22,6 +23,7 @@ export {
   selectActiveConversation,
   selectActiveSessionModel,
   selectIsTurnActive,
+  selectSkillCatalog,
   selectPendingRequestsForThread,
   selectThreadsByWorkspace,
 } from "./selectors";

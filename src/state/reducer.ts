@@ -9,6 +9,7 @@ import {
   wireItems,
 } from "./conversation";
 import { applyNotification } from "./notifications";
+import { reduceSkillCatalog } from "./skills";
 import { dropRequest, fillEmptyPreview, pushNotice, upsertThread, withThreads } from "./threads";
 import type { AppEvent, AppState, Conversation, ConversationTurn, ThreadSummary } from "./types";
 import { parseNotification, parseServerRequest } from "./wire";
@@ -26,6 +27,9 @@ export function createInitialState(): AppState {
     pendingRequests: [],
     notices: [],
     composer: { modelId: null, effort: null },
+    skillCatalogs: {},
+    loadedSkillCwds: {},
+    skillGeneration: 0,
   };
 }
 
@@ -47,7 +51,11 @@ function settleAfterDisconnect(conversation: Conversation): Conversation {
 }
 
 function applyBridgeStatus(state: AppState, status: BridgeStatus): AppState {
-  if (status.state === "connected") return { ...state, bridge: status };
+  if (status.state === "connected") {
+    return state.bridge?.state === "connected"
+      ? { ...state, bridge: status }
+      : { ...state, bridge: status, skillCatalogs: {}, loadedSkillCwds: {} };
+  }
   let changed = false;
   const conversations: Record<string, Conversation> = {};
   for (const [threadId, conversation] of Object.entries(state.conversations)) {
@@ -60,6 +68,8 @@ function applyBridgeStatus(state: AppState, status: BridgeStatus): AppState {
     bridge: status,
     conversations: changed ? conversations : state.conversations,
     pendingRequests: state.pendingRequests.length === 0 ? state.pendingRequests : [],
+    skillCatalogs: {},
+    loadedSkillCwds: {},
   };
 }
 
@@ -114,10 +124,17 @@ export function reduce(state: AppState, event: AppEvent): AppState {
       return dropRequest(state, event.id);
     case "models/loaded":
       return { ...state, models: event.models };
+    case "skills/loading":
+    case "skills/loaded":
+    case "skills/failed":
+      return reduceSkillCatalog(state, event);
     case "threads/listed":
       return applyThreadsListed(state, event);
     case "thread/opened": {
-      const opened = upsertThread(state, toSummary(event.thread));
+      const opened = upsertThread(
+        event.resumed ? { ...state, loadedSkillCwds: { ...state.loadedSkillCwds, [event.thread.cwd]: true } } : state,
+        toSummary(event.thread),
+      );
       return updateConversation(opened, event.thread.id, (conversation) => ({
         ...conversation,
         resumed: event.resumed,

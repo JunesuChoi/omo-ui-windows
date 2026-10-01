@@ -106,7 +106,7 @@ function defaultThread(id) {
 }
 
 function addThread(thread, extra = {}) {
-  const record = { thread, archived: false, lastEntryId: null, activeTurn: null, ...extra };
+  const record = { thread, loaded: false, archived: false, lastEntryId: null, activeTurn: null, ...extra };
   threads.set(thread.id, record);
   return record;
 }
@@ -501,6 +501,33 @@ const MODELS = [
   supportedReasoningEfforts: ["low", "medium", "high"].map((reasoningEffort) => ({ reasoningEffort, description: "" })),
 }));
 
+const DEFAULT_SKILLS = [
+  { name: "ulw-loop", description: "Run a goal-driven loop.", scope: "system", enabled: true },
+  { name: "mass-ulw", description: "Run dependency-ordered workflows.", scope: "system", enabled: true },
+  { name: "plan", description: "Plan the requested work.", scope: "user", enabled: true },
+  { name: "user-only-skill", description: "Invoke explicitly as a user.", scope: "user", enabled: false },
+  { name: "long-description-skill", description: "L".repeat(400), scope: "user", enabled: true },
+].map((skill) => ({ ...skill, path: `/fake/skills/${skill.name}/SKILL.md` }));
+
+// FAKE_OMO_SKILLS uses the wire response fields: { data: [{ cwd, skills, errors }] }.
+function listSkills(params) {
+  if (
+    (params.cwds !== undefined && (!Array.isArray(params.cwds) || params.cwds.some((cwd) => typeof cwd !== "string"))) ||
+    (params.forceReload !== undefined && typeof params.forceReload !== "boolean")
+  ) throw new RpcFailure(INVALID_PARAMS, "Invalid params: skills/list");
+  const cwds = params.cwds?.length > 0 ? params.cwds : [process.cwd()];
+  const configured = process.env.FAKE_OMO_SKILLS === undefined ? null : JSON.parse(process.env.FAKE_OMO_SKILLS);
+  return {
+    data: cwds.map((cwd) => {
+      const loaded = [...threads.values()].some((record) => record.loaded && record.thread.cwd === cwd);
+      if (!loaded) {
+        return { cwd, skills: DEFAULT_SKILLS.filter((skill) => skill.name === "plan" || skill.name === "long-description-skill"), errors: [] };
+      }
+      return configured?.data.find((entry) => entry.cwd === cwd) ?? { cwd, skills: DEFAULT_SKILLS, errors: [] };
+    }),
+  };
+}
+
 function listThreads(params) {
   const cwdFilter = typeof params.cwd === "string" ? [params.cwd] : Array.isArray(params.cwd) ? params.cwd : null;
   const term = typeof params.searchTerm === "string" ? params.searchTerm.toLowerCase() : "";
@@ -521,6 +548,9 @@ function startTurn(id, params) {
     throw new RpcFailure(INVALID_REQUEST, `Thread already has an active turn: ${record.thread.id}`);
   }
   const input = Array.isArray(params.input) ? params.input : [];
+  if (input.some((item) => isRecord(item) && item.type === "skill")) {
+    throw new RpcFailure(INVALID_PARAMS, "Invalid params: unsupported input item type skill");
+  }
   const clientId = typeof params.clientUserMessageId === "string" ? params.clientUserMessageId : null;
   const turn = createTurn(record.thread.id);
   respond(id, { turn: { ...turn.wire, items: [] } });
@@ -571,20 +601,26 @@ function handleRequest(id, method, params) {
     case "model/list":
       respond(id, { data: MODELS, nextCursor: null });
       return;
+    case "skills/list":
+      respond(id, listSkills(params));
+      return;
     case "thread/list":
       respond(id, listThreads(params));
       return;
     case "thread/start": {
       const thread = { ...defaultThread(randomUUID()), cwd: requireString(params, "cwd") };
-      const record = addThread(thread);
+      const record = addThread(thread, { loaded: true });
       recordEntry(record, { type: "model_change", provider: "fake", modelId: "alpha" });
       notify("thread/started", { thread: threadView(record, false) });
       respond(id, sessionResult(record));
       return;
     }
-    case "thread/resume":
-      respond(id, sessionResult(getThread(requireString(params, "threadId"))));
+    case "thread/resume": {
+      const record = getThread(requireString(params, "threadId"));
+      record.loaded = true;
+      respond(id, sessionResult(record));
       return;
+    }
     case "thread/read":
       respond(id, { thread: threadView(getThread(requireString(params, "threadId")), params.includeTurns === true) });
       return;

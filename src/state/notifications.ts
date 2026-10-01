@@ -17,6 +17,7 @@ import {
 import { dropRequest, fillEmptyPreview, pushNotice, removeThread, updateThread, upsertThread } from "./threads";
 import type { AppState, Conversation, ConversationItem } from "./types";
 import type { ServerNotification } from "./wire";
+import { invalidateSkillCatalogs } from "./skills";
 
 interface ItemPlacement {
   threadId: string;
@@ -87,6 +88,8 @@ function completeTurn(conversation: Conversation, notification: Extract<ServerNo
 
 export function applyNotification(state: AppState, notification: ServerNotification, receivedAtMs: number): AppState {
   switch (notification.method) {
+    case "skills/changed":
+      return invalidateSkillCatalogs(state);
     case "thread/started":
       return upsertThread(state, toSummary(notification.params.thread));
     case "thread/status/changed": {

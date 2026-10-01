@@ -39,9 +39,9 @@ class FakeOmo {
   private readonly listeners = new Set<() => void>();
   private readonly child: ChildProcessWithoutNullStreams;
 
-  constructor(home: string, logPath: string) {
+  constructor(home: string, logPath: string, env: NodeJS.ProcessEnv = {}) {
     this.child = spawn(process.execPath, [FIXTURE, "app-server", "--listen", "stdio://"], {
-      env: { ...process.env, FAKE_OMO_HOME: home, FAKE_OMO_LOG: logPath },
+      env: { ...process.env, FAKE_OMO_HOME: home, FAKE_OMO_LOG: logPath, ...env },
       stdio: "pipe",
     });
     createInterface({ input: this.child.stdout }).on("line", (line) => {
@@ -162,7 +162,7 @@ class FakeOmo {
 interface Sandbox {
   dir: string;
   home: string;
-  launch(logName?: string): FakeOmo;
+  launch(logName?: string, env?: NodeJS.ProcessEnv): FakeOmo;
 }
 
 const sandboxDirs: string[] = [];
@@ -175,8 +175,8 @@ async function sandbox(): Promise<Sandbox> {
   return {
     dir,
     home,
-    launch(logName = "log.jsonl") {
-      const client = new FakeOmo(home, join(dir, logName));
+    launch(logName = "log.jsonl", env = {}) {
+      const client = new FakeOmo(home, join(dir, logName), env);
       liveClients.push(client);
       return client;
     },
@@ -214,6 +214,92 @@ afterEach(async () => {
 });
 
 describe("fake omo binary", () => {
+  function catalogEntries(result: unknown): Frame[] {
+    const data = at(result, "data");
+    if (!Array.isArray(data) || !data.every(isRecord)) throw new Error("expected catalog entries");
+    return data;
+  }
+
+  function catalogNames(result: unknown): string[] {
+    const skills = at(catalogEntries(result)[0], "skills");
+    if (!Array.isArray(skills)) throw new Error("expected skills");
+    return skills.map((skill) => str(at(skill, "name")));
+  }
+
+  it("lists defaults before thread load and bundled skills after thread start", async () => {
+    const box = await sandbox();
+    const client = box.launch();
+    await client.handshake();
+    const early = await client.request("skills/list", { cwds: [box.dir] });
+    await client.startThread(box.dir);
+    const loaded = await client.request("skills/list", { cwds: [box.dir] });
+
+    expect(catalogNames(early)).toEqual(["plan", "long-description-skill"]);
+    expect(catalogNames(loaded)).toEqual(["ulw-loop", "mass-ulw", "plan", "user-only-skill", "long-description-skill"]);
+    const skills = at(catalogEntries(loaded)[0], "skills");
+    expect(Array.isArray(skills) && skills.find((skill) => at(skill, "name") === "user-only-skill")).toMatchObject({ enabled: false });
+    expect(Array.isArray(skills) && str(at(skills.find((skill) => at(skill, "name") === "long-description-skill"), "description")).length).toBe(400);
+    const logged = await readJsonLines(join(box.dir, "log.jsonl"));
+    expect(logged.filter((frame) => frame.method === "skills/list")).toHaveLength(2);
+    expect(await client.close()).toBe(0);
+  });
+
+  it("does not count persisted threads as loaded until resume", async () => {
+    const box = await sandbox();
+    const first = box.launch();
+    await first.handshake();
+    const threadId = await first.startThread(box.dir);
+    expect(await first.close()).toBe(0);
+    const second = box.launch("second.jsonl");
+    await second.handshake();
+    const early = await second.request("skills/list", { cwds: [box.dir] });
+    await second.request("thread/resume", { threadId });
+    const loaded = await second.request("skills/list", { cwds: [box.dir], forceReload: true });
+    expect(catalogNames(early)).not.toContain("ulw-loop");
+    expect(catalogNames(loaded)).toContain("ulw-loop");
+    expect(await second.close()).toBe(0);
+  });
+
+  it("returns configured per-cwd metadata, diagnostics and empty catalogs", async () => {
+    const box = await sandbox();
+    const otherCwd = join(box.dir, "other");
+    const data = [{
+      cwd: box.dir,
+      skills: [{
+        name: "custom", path: "/fake/custom/SKILL.md", scope: "repo", enabled: false, description: "Custom",
+        shortDescription: "Legacy", interface: { shortDescription: "Short" },
+        dependencies: { tools: [{ type: "mcp", value: "docs" }] },
+      }],
+      errors: [{ path: "/fake/broken/SKILL.md", message: "Invalid metadata" }],
+    }, { cwd: otherCwd, skills: [], errors: [] }];
+    const client = box.launch("log.jsonl", { FAKE_OMO_SKILLS: JSON.stringify({ data }) });
+    await client.handshake();
+    await client.startThread(box.dir);
+    await client.startThread(otherCwd);
+    const result = await client.request("skills/list", { cwds: [otherCwd, box.dir], forceReload: true });
+    expect(catalogEntries(result)).toEqual([data[1], data[0]]);
+    const logged = await readJsonLines(join(box.dir, "log.jsonl"));
+    expect(logged.find((frame) => frame.method === "skills/list")?.params).toEqual({ cwds: [otherCwd, box.dir], forceReload: true });
+    expect(await client.close()).toBe(0);
+  });
+
+  it("rejects structured skill input with invalid params before starting a turn", async () => {
+    const box = await sandbox();
+    const client = box.launch();
+    await client.handshake();
+    const threadId = await client.startThread(box.dir);
+    const rejected = await client.call("turn/start", {
+      threadId, input: [{ type: "skill", name: "ulw-loop", path: "/fake/skills/ulw-loop/SKILL.md" }],
+    });
+    expect(at(rejected, "error", "code")).toBe(-32602);
+    expect(client.frames.some((frame) => frame.method === "turn/started")).toBe(false);
+    const turnId = await client.startTurn(threadId, "/skill:ulw-loop /skill:plan do work");
+    await client.waitTurnCompleted(turnId);
+    const user = client.frames.find((frame) => frame.method === "item/completed" && at(frame, "params", "item", "type") === "userMessage");
+    expect(at(user, "params", "item", "content")).toEqual([{ type: "text", text: "/skill:ulw-loop /skill:plan do work", text_elements: [] }]);
+    expect(await client.close()).toBe(0);
+  });
+
   it("prints its version and rejects unknown arguments with exit code 2", async () => {
     const version = await execFileAsync(process.execPath, [FIXTURE, "--version"]);
     expect(version.stdout).toBe("omo 5.1.4-fake (engine: fake)\n");

@@ -237,6 +237,62 @@ export interface ThreadSessionResult {
   reasoningEffort: ReasoningEffort | null;
 }
 
+export type SkillScope = "user" | "repo" | "system" | "admin";
+
+export interface SkillInterface {
+  displayName?: string;
+  shortDescription?: string;
+  iconSmall?: string;
+  iconLarge?: string;
+  brandColor?: string;
+  defaultPrompt?: string;
+}
+
+export interface SkillToolDependency {
+  type: string;
+  value: string;
+  description?: string;
+  transport?: string;
+  command?: string;
+  url?: string;
+}
+
+export interface SkillDependencies {
+  tools: SkillToolDependency[];
+}
+
+export interface SkillMetadata {
+  name: string;
+  description: string;
+  shortDescription?: string;
+  interface?: SkillInterface;
+  dependencies?: SkillDependencies;
+  path: string;
+  scope: SkillScope;
+  /** False means human-only invocation, not that the skill is unselectable. */
+  enabled: boolean;
+}
+
+export interface SkillErrorInfo {
+  path: string;
+  message: string;
+}
+
+export interface SkillsListParams {
+  cwds?: string[];
+  forceReload?: boolean;
+}
+
+export interface SkillsListEntry {
+  cwd: string;
+  skills: SkillMetadata[];
+  errors: SkillErrorInfo[];
+}
+
+export interface SkillsListResponse {
+  data: SkillsListEntry[];
+}
+
 export interface ClientRequestMap {
   initialize: {
     params: {
@@ -249,6 +305,7 @@ export interface ClientRequestMap {
     params: { includeHidden?: boolean; cursor?: number | null; limit?: number | null };
     result: { data: Model[]; nextCursor: number | null };
   };
+  "skills/list": { params: SkillsListParams; result: SkillsListResponse };
   "thread/list": {
     params: {
       limit?: number | null;
@@ -287,6 +344,7 @@ export type ClientResult<M extends ClientMethod> = ClientRequestMap[M]["result"]
 export const CLIENT_METHODS = [
   "initialize",
   "model/list",
+  "skills/list",
   "thread/list",
   "thread/start",
   "thread/resume",
@@ -300,6 +358,7 @@ export const CLIENT_METHODS = [
 ] as const satisfies readonly ClientMethod[];
 
 export interface ServerNotificationMap {
+  "skills/changed": Record<string, never>;
   "thread/started": { thread: Thread };
   "thread/status/changed": { threadId: string; status: ThreadStatus };
   "thread/name/updated": { threadId: string; threadName?: string };

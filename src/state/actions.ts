@@ -3,6 +3,7 @@ import type { ApprovalDecision, ReasoningEffort, RequestId, RpcNotification, Thr
 import type { AppStore } from "./store";
 import type { NoticeCode, SessionModel } from "./types";
 import { parseNotification } from "./wire";
+import { selectSkillCatalog } from "./selectors";
 
 const THREAD_PAGE_SIZE = 50;
 const RECENT_WORKSPACE_LIMIT = 10;
@@ -18,6 +19,10 @@ export interface AppActions {
   connect(): () => void;
   refreshModels(): Promise<void>;
   refreshThreads(append?: boolean): Promise<void>;
+  /** Requests a cwd catalog only after a thread for that cwd is loaded; force reloads the server's session loader. */
+  loadSkills(cwd: string, options?: { force?: boolean }): Promise<void>;
+  /** Loads an idle or invalidated catalog, never creating/resuming a thread or requesting a pre-thread fallback catalog. */
+  ensureSkills(cwd: string): Promise<void>;
   /** Activates the thread and loads its session history when not yet loaded; never resumes it. */
   openThread(threadId: string): Promise<void>;
   /** Starts and activates a thread in `cwd`; resolves its id, or null on failure. */
@@ -74,6 +79,25 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
       );
       store.dispatch({ type: "threads/listed", threads: result.data, nextCursor: result.nextCursor, append });
     });
+
+  const loadSkills = async (cwd: string, { force = false }: { force?: boolean } = {}): Promise<void> => {
+    if (store.getState().loadedSkillCwds[cwd] !== true) return;
+    store.dispatch({ type: "skills/loading", cwd });
+    const generation = selectSkillCatalog(store.getState(), cwd).generation;
+    try {
+      const result = await bridge.request("skills/list", { cwds: [cwd], ...(force ? { forceReload: true } : {}) });
+      const entry = result.data.find((candidate) => candidate.cwd === cwd);
+      if (entry === undefined) throw new Error(`skills/list returned no entry for ${cwd}`);
+      store.dispatch({ type: "skills/loaded", cwd, generation, skills: entry.skills, errors: entry.errors });
+    } catch (error) {
+      store.dispatch({ type: "skills/failed", cwd, generation, message: errorMessage(error) });
+    }
+  };
+
+  const ensureSkills = (cwd: string): Promise<void> => {
+    const catalog = selectSkillCatalog(store.getState(), cwd);
+    return catalog.status === "idle" ? loadSkills(cwd, { force: catalog.stale }) : Promise.resolve();
+  };
 
   const rememberWorkspace = (cwd: string): Promise<void> =>
     guarded(async () => {
@@ -135,6 +159,11 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
         bridge.onNotification((notification) => {
           if (!active) return;
           store.dispatch({ type: "rpc/notification", notification, receivedAtMs: now() });
+          if (parseNotification(notification)?.method === "skills/changed") {
+            const state = store.getState();
+            const cwd = state.activeThreadId === null ? undefined : state.threads[state.activeThreadId]?.cwd;
+            if (cwd !== undefined) void ensureSkills(cwd);
+          }
           void reconcile(notification);
         }),
         bridge.onServerRequest((request) => {
@@ -157,11 +186,15 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
 
     refreshModels,
     refreshThreads,
+    loadSkills,
+    ensureSkills,
 
     async openThread(threadId) {
       store.dispatch({ type: "thread/activated", threadId });
       const state = store.getState();
       const historyState = state.conversations[threadId]?.historyState ?? "idle";
+      const cwd = state.threads[threadId]?.cwd;
+      if (cwd !== undefined) void ensureSkills(cwd);
       if (historyState !== "idle" && historyState !== "error") return;
       store.dispatch({ type: "history/loading", threadId });
       const path = state.threads[threadId]?.path ?? null;
@@ -182,6 +215,7 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
         store.dispatch({ type: "thread/opened", thread: result.thread, resumed: true, session: sessionOf(result) });
         store.dispatch({ type: "thread/activated", threadId });
         store.dispatch({ type: "history/loaded", threadId, turns: [] });
+        await ensureSkills(result.thread.cwd);
         await rememberWorkspace(cwd);
         return threadId;
       } catch (error) {
@@ -214,6 +248,7 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
         if (conversation?.resumed !== true) {
           const resumed = await bridge.request("thread/resume", { threadId });
           store.dispatch({ type: "thread/opened", thread: resumed.thread, resumed: true, session: sessionOf(resumed) });
+          await ensureSkills(resumed.thread.cwd);
         }
         store.dispatch({ type: "user/messageSent", threadId, clientId, text, sentAtMs: now() });
         const { modelId, effort } = store.getState().composer;

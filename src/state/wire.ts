@@ -106,6 +106,8 @@ export function parseNotification(notification: RpcNotification): ServerNotifica
   if (!isObject(params)) return null;
   const { threadId, turnId } = params;
   switch (notification.method) {
+    case "skills/changed":
+      return Object.keys(params).length === 0 ? { method: "skills/changed", params: {} } : null;
     case "thread/started": {
       const thread = params["thread"];
       return isThread(thread) ? { method: "thread/started", params: { thread } } : null;

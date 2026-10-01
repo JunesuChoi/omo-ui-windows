@@ -7,6 +7,8 @@ import type {
   RequestId,
   RpcNotification,
   RpcServerRequest,
+  SkillErrorInfo,
+  SkillMetadata,
   Thread,
   ThreadItem,
   ThreadStatus,
@@ -91,6 +93,14 @@ export interface ComposerState {
   effort: ReasoningEffort | null;
 }
 
+export interface SkillCatalog {
+  status: "idle" | "loading" | "ready" | "error";
+  skills: SkillMetadata[];
+  errors: SkillErrorInfo[];
+  generation: number;
+  stale: boolean;
+}
+
 export interface AppState {
   bridge: BridgeStatus | null;
   models: Model[];
@@ -104,6 +114,11 @@ export interface AppState {
   pendingRequests: PendingRequest[];
   notices: Notice[];
   composer: ComposerState;
+  skillCatalogs: Record<string, SkillCatalog>;
+  /** Cwds loaded through a successful thread/start or thread/resume in this bridge session. */
+  loadedSkillCwds: Record<string, true>;
+  /** Monotonic across bridge reconnects to fence responses from the previous process. */
+  skillGeneration: number;
 }
 
 export type AppEvent =
@@ -112,6 +127,9 @@ export type AppEvent =
   | { type: "rpc/serverRequest"; request: RpcServerRequest; receivedAtMs: number }
   | { type: "rpc/serverRequestAnswered"; id: RequestId }
   | { type: "models/loaded"; models: Model[] }
+  | { type: "skills/loading"; cwd: string }
+  | { type: "skills/loaded"; cwd: string; generation: number; skills: SkillMetadata[]; errors: SkillErrorInfo[] }
+  | { type: "skills/failed"; cwd: string; generation: number; message: string }
   | { type: "threads/listed"; threads: Thread[]; nextCursor: string | null; append: boolean }
   | { type: "thread/opened"; thread: Thread; resumed: boolean; session?: SessionModel }
   | { type: "thread/activated"; threadId: string | null }

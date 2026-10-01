@@ -1,5 +1,11 @@
 import type { Model } from "../../shared/protocol";
-import type { AppState, Conversation, PendingRequest, SessionModel, ThreadSummary } from "./types";
+import type { AppState, Conversation, PendingRequest, SessionModel, SkillCatalog, ThreadSummary } from "./types";
+import { EMPTY_SKILL_CATALOG } from "./skills";
+
+/** Returns a stable idle catalog when this cwd has not been requested. */
+export function selectSkillCatalog(state: AppState, cwd: string): SkillCatalog {
+  return state.skillCatalogs[cwd] ?? EMPTY_SKILL_CATALOG;
+}
 
 export interface WorkspaceGroup {
   cwd: string;
