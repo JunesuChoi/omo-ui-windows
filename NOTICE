@@ -26,6 +26,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-The bundled Montserrat font is licensed under the SIL Open Font License 1.1; its license text ships next to the font files.
+The bundled Montserrat font is licensed under the SIL Open Font License 1.1; its license text is src/dsh/theme/Montserrat-OFL.txt in the source and Contents/Resources/Montserrat-OFL.txt, next to this NOTICE, in the app.
 
 The OmO UI app icon (build/icon.svg and the files rendered from it) is an original work by sigridjineth and contains no DeepSeek artwork or logos.
