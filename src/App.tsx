@@ -1,7 +1,9 @@
 import { useEffect, useMemo } from "react";
-import { createActions, createAppStore } from "./state";
+import { createActions, createAppStore, localSideStorage } from "./state";
 import { I18nProvider, resolveLocale } from "./i18n";
 import { ActionsContext, StoreContext, useAppSelector } from "./ui/app-context";
+import { SIDE_PANEL_WIDTH, SidePanel } from "./ui/btw/SidePanel";
+import { useSidePanelShortcut } from "./ui/btw/SideToggle";
 import { Composer } from "./ui/composer/Composer";
 import { ConversationPane } from "./ui/conversation/ConversationPane";
 import { useNewSessionFlow } from "./ui/new-session";
@@ -24,8 +26,12 @@ function MainPane() {
   );
 }
 
+const renderSidePanel = (placement: "docked" | "overlay") => <SidePanel placement={placement} />;
+
 function Shell() {
   const bridgeState = useAppSelector((state) => state.bridge?.state ?? null);
+  const sidePanelOpen = useAppSelector((state) => state.btw.open);
+  useSidePanelShortcut();
   const { sidebarVisible, sidebarWidth } = useUiState();
   const newSession = useNewSessionFlow();
 
@@ -69,6 +75,8 @@ function Shell() {
         sidebarVisible={sidebarVisible}
         sidebarWidth={sidebarWidth}
         onSidebarWidthChange={uiState.setSidebarWidth}
+        rightPanel={sidePanelOpen ? renderSidePanel : null}
+        rightPanelWidth={SIDE_PANEL_WIDTH}
       />
       <SettingsDialog />
       <NoticeToasts />
@@ -78,7 +86,7 @@ function Shell() {
 
 export function App() {
   const store = useMemo(() => createAppStore(), []);
-  const actions = useMemo(() => createActions(store, window.omo), [store]);
+  const actions = useMemo(() => createActions(store, window.omo, { sideStorage: localSideStorage() }), [store]);
   const { preferences } = useUiState();
 
   useEffect(() => actions.connect(), [actions]);

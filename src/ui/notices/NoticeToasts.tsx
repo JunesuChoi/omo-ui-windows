@@ -1,5 +1,6 @@
 import { Toast } from "@deepseek-ai/dsh-client-ui-primitives";
 import { useT } from "../../i18n";
+import { selectToastNotice } from "../../state";
 import { useActions, useAppSelector } from "../app-context";
 import { TESTID } from "../testids";
 import css from "./NoticeToasts.module.css";
@@ -7,9 +8,12 @@ import css from "./NoticeToasts.module.css";
 const ERROR_HOLD_MS = 6000;
 const INFO_HOLD_MS = 3000;
 
-/** Shows store notices one at a time, oldest first, as DSH toasts; each notice is dismissed when its toast fades out. */
+/**
+ * Shows store notices one at a time, oldest first, as DSH toasts; each notice is dismissed when its toast fades out.
+ * Side chat notices render inside the side chat panel instead.
+ */
 export function NoticeToasts() {
-  const notice = useAppSelector((state) => state.notices[0] ?? null);
+  const notice = useAppSelector(selectToastNotice);
   const actions = useActions();
   const t = useT();
   if (notice === null) return null;

@@ -1,6 +1,6 @@
 # src/ui — app shell and lane slots
 
-`src/App.tsx` builds the store and actions once, connects the bridge, loads preferences, applies theme and locale, and renders either `<Onboarding/>` (bridge state `not-found`) or `<AppFrame sidebar={<Sidebar/>} main={<ConnectionBanner/> + <ConversationPane/> + <Composer/>}/>` plus `<SettingsDialog/>`. Each slot component lives in its own directory:
+`src/App.tsx` builds the store and actions once, connects the bridge, loads preferences, applies theme and locale, and renders either `<Onboarding/>` (bridge state `not-found`) or `<AppFrame sidebar={<Sidebar/>} main={<ConnectionBanner/> + <ConversationPane/> + <Composer/>} rightPanel={<SidePanel/> while the side chat is open}/>` plus `<SettingsDialog/>`. Each slot component lives in its own directory:
 
 | Directory | Lane | Export |
 | --- | --- | --- |
@@ -10,9 +10,11 @@
 | `src/ui/settings/` | settings | `SettingsDialog` |
 | `src/ui/onboarding/` | shell/onboarding | `Onboarding`, `ConnectionBanner` |
 | `src/ui/shell/` | shell (owned here) | `AppFrame`, `columns.ts` |
+| `src/ui/btw/` | /btw side chat | `SidePanel`, `SideToggle`, `useSidePanelShortcut` (⌘E), `useAskSide` |
 
 ## Shared modules
 
+- **Side chat:** `src/state/btw.ts` owns `state.btw` (the panel flag, side chats per main thread, selection, drafts, the detached-context flag) and the rules that keep side threads out of `selectThreadsByWorkspace`. `src/ui/btw/background.ts` builds a side chat's first message (marker line, read-only rule, at most 64 recent messages and 64 KiB, then the question); the composer intercepts `/btw` and `/side` before `turn/start`, so omo never receives them. Side chats persist in localStorage under `omo-ui.side-chats.v1` through `localSideStorage()`, and their notices render in the panel instead of as toasts. AppFrame docks the panel as a third column while the center keeps 400 px, and overlays the main column otherwise.
 - `src/ui/app-context.tsx`: `useActions()` (throws outside the provider), `ActionsContext`, and re-exports of `StoreContext` / `useAppSelector` from `src/state`.
 - `src/ui/ui-state.ts`: a tiny external store read with `useUiState()` — `settingsOpen`, `sidebarVisible`, `sidebarWidth` (default 280, clamped 220–420) and `preferences`. Setters live on the `uiState` object (`setSettingsOpen`, `setSidebarVisible`, `toggleSidebar`, `setSidebarWidth`, `setPreferences`).
 - **Preferences for the settings lane:** call `updatePreferences(patch)` from `src/ui/ui-state.ts`. It writes through `window.omo.setPreferences`, records the stored result in `uiState.preferences`, and `App.tsx` re-applies the theme (`applyThemePreference`) and locale (`resolveLocale`) from that value. Read the current preferences with `useUiState().preferences` (null until the first `getPreferences` resolves).

@@ -3,16 +3,19 @@ import type { KeyboardEvent, MouseEvent, SyntheticEvent } from "react";
 import clsx from "clsx";
 import { IconFolderOpenOutlineRegular, Tooltip } from "@deepseek-ai/dsh-client-ui-primitives";
 import { ArrowUpGlyph, LockOpenGlyph } from "../glyphs";
-import { selectIsTurnActive, selectSkillCatalog } from "../../state";
+import { parseBtwCommand, selectIsTurnActive, selectSkillCatalog } from "../../state";
 import type { AppState, SkillCatalog } from "../../state";
 import { useT } from "../../i18n";
 import { useActions, useAppSelector } from "../app-context";
+import { useAskSide } from "../btw/use-ask-side";
 import { ConversationDock } from "../conversation/ConversationDock";
 import { TESTID } from "../testids";
 import { updatePreferences, useUiState } from "../ui-state";
 import { ModelPicker } from "./ModelPicker";
 import { SkillMenu } from "./SkillMenu";
 import type { SkillMenuStatus } from "./SkillMenu";
+import { acceptCommand, matchCommands, menuOptions } from "./commands";
+import type { MenuOption } from "./commands";
 import { detectMagicKeyword, segmentDraft } from "./magic-keyword";
 import { acceptSkill, detectSkillTrigger, pruneSelected, rankSkills, serializeSkillDraft } from "./skill-draft";
 import type { SkillDraft } from "./skill-draft";
@@ -20,6 +23,7 @@ import css from "./Composer.module.css";
 
 const NO_THREAD_DRAFT = "";
 const EMPTY_DRAFT: SkillDraft = { text: "", selected: [] };
+const NO_OPTIONS: readonly MenuOption[] = [];
 
 const selectActiveCwd = (state: AppState): string | null =>
   state.activeThreadId === null ? null : (state.threads[state.activeThreadId]?.cwd ?? null);
@@ -53,6 +57,7 @@ function StopIcon() {
 export function Composer() {
   const t = useT();
   const actions = useActions();
+  const askSide = useAskSide();
   const activeThreadId = useAppSelector((state) => state.activeThreadId);
   const turnActive = useAppSelector(selectIsTurnActive);
   const connected = useAppSelector((state) => state.bridge?.state === "connected");
@@ -114,8 +119,12 @@ export function Composer() {
     () => (menuOpen && cwdLoaded && catalogSkills !== undefined ? rankSkills(catalogSkills, query) : []),
     [menuOpen, cwdLoaded, catalogSkills, query],
   );
+  const options = useMemo(
+    () => (menuOpen ? menuOptions(matchCommands(query), rows, query) : NO_OPTIONS),
+    [menuOpen, rows, query],
+  );
   const activeIndex =
-    rows.length === 0 ? -1 : highlight.key === triggerKey ? Math.min(highlight.index, rows.length - 1) : 0;
+    options.length === 0 ? -1 : highlight.key === triggerKey ? Math.min(highlight.index, options.length - 1) : 0;
   const triggerStart = useRef<number | null>(null);
   triggerStart.current = trigger?.start ?? null;
 
@@ -148,10 +157,18 @@ export function Composer() {
     setLimitReached(false);
   }, []);
 
-  const pickSkill = (index: number): void => {
-    const skill = rows[index];
-    if (skill === undefined || trigger === null) return;
-    const result = acceptSkill(draft, trigger, skill.name);
+  const pickOption = (index: number): void => {
+    const option = options[index];
+    if (option === undefined || trigger === null) return;
+    if (option.kind === "command") {
+      const accepted = acceptCommand(draft.text, trigger, option.command.name);
+      pendingCaret.current = accepted.caret;
+      setDraft({ text: accepted.text, selected: pruneSelected(accepted.text, draft.selected) });
+      setCaret(accepted.caret);
+      setLimitReached(false);
+      return;
+    }
+    const result = acceptSkill(draft, trigger, option.skill.name);
     if (!result.ok) {
       setLimitReached(true);
       return;
@@ -197,9 +214,22 @@ export function Composer() {
     return dir;
   };
 
+  const routeSideCommand = (question: string): void => {
+    actions.setSidePanel(true);
+    if (activeThreadId === null) return;
+    setDraft(EMPTY_DRAFT);
+    setDismissedStart(null);
+    if (question !== "") void askSide(question);
+  };
+
   const submit = async (): Promise<void> => {
     const message = text.trim();
     if (!canSend || message === "") return;
+    const command = parseBtwCommand(message);
+    if (command !== null) {
+      routeSideCommand(command.question);
+      return;
+    }
     const selected = draft.selected;
     const transport = serializeSkillDraft({ text: message, selected });
     setBusy(true);
@@ -212,6 +242,7 @@ export function Composer() {
         drafts.current.delete(NO_THREAD_DRAFT);
       }
       setDraft(EMPTY_DRAFT);
+      setDismissedStart(null);
       const sent = await actions.sendMessage(transport);
       if (!sent) {
         setDraft((current) => (current.text === "" ? { text: message, selected: pruneSelected(message, selected) } : current));
@@ -228,9 +259,9 @@ export function Composer() {
     if (menuOpen) {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
-        if (rows.length === 0) return;
+        if (options.length === 0) return;
         const offset = event.key === "ArrowDown" ? 1 : -1;
-        setHighlight({ key: triggerKey, index: (activeIndex + offset + rows.length) % rows.length });
+        setHighlight({ key: triggerKey, index: (activeIndex + offset + options.length) % options.length });
         return;
       }
       if (event.key === "Escape") {
@@ -240,7 +271,7 @@ export function Composer() {
       }
       if ((event.key === "Enter" || event.key === "Tab") && !event.shiftKey && activeIndex >= 0) {
         event.preventDefault();
-        pickSkill(activeIndex);
+        pickOption(activeIndex);
         return;
       }
     }
@@ -278,12 +309,12 @@ export function Composer() {
             listboxId={listboxId}
             optionId={optionId}
             status={status}
-            rows={rows}
+            options={options}
             diagnostics={status.kind === "ready" ? (catalog?.errors ?? []) : []}
             catalogEmpty={catalogSkills === undefined || catalogSkills.length === 0}
             activeIndex={activeIndex}
             limitReached={limitReached}
-            onPick={pickSkill}
+            onPick={pickOption}
             onHover={(index) => setHighlight({ key: triggerKey, index })}
             onRetry={() => {
               if (activeCwd !== null) void actions.loadSkills(activeCwd, { force: true });

@@ -430,7 +430,26 @@ async function runFull(record, turn) {
   closeAgentMessage(record, turn, item, "stop");
 }
 
+const SIDE_MARKER = "[OmO UI side chat background]";
+
+/** Answers an OmO UI side chat's first message, naming its question and how much main context it carried. */
+async function runSide(record, turn, text) {
+  const question = (/\nSide question: ([\s\S]*)$/.exec(text)?.[1] ?? "").trim();
+  const users = [...text.matchAll(/<user>\n([\s\S]*?)\n<\/user>/g)].map((match) => match[1]);
+  const assistants = [...text.matchAll(/<assistant>\n/g)].length;
+  const reply = users.length === 0
+    ? `Side answer to "${question}" without main context.`
+    : `Side answer to "${question}" from ${users.length + assistants} main messages; the first main request was "${users[0]}".`;
+  const item = openAgentMessage(turn);
+  for (const chunk of splitInto(reply, 3)) {
+    appendAgentDelta(turn, item, chunk);
+    await sleep(turn, 40);
+  }
+  closeAgentMessage(record, turn, item, "stop");
+}
+
 function runScenario(record, turn, text) {
+  if (text.startsWith(SIDE_MARKER)) return runSide(record, turn, text);
   if (text.includes("SCENARIO:omo-live")) return runLive(record, turn);
   if (text === "SCENARIO:skills-history") {
     const item = openAgentMessage(turn);

@@ -13,6 +13,7 @@ import { useT } from "../../i18n";
 import type { Conversation, ConversationTurn, PendingRequest } from "../../state";
 import { selectActiveConversation, selectIsTurnActive, selectPendingRequestsForThread } from "../../state";
 import { useActions, useAppSelector } from "../app-context";
+import { SideToggle } from "../btw/SideToggle";
 import { TESTID } from "../testids";
 import { ActivityPanel, ActivityToggle } from "./ActivityPanel";
 import { ApprovalCard } from "./ApprovalCard";
@@ -182,7 +183,10 @@ export function ConversationPane() {
   const activity = useMemo(
     () =>
       threadId === null ? null : (
-        <ActivityToggle threadId={threadId} open={showActivity} controlsId={activityId} onToggle={toggleActivity} />
+        <>
+          <ActivityToggle threadId={threadId} open={showActivity} controlsId={activityId} onToggle={toggleActivity} />
+          <SideToggle />
+        </>
       ),
     [threadId, showActivity, activityId, toggleActivity],
   );

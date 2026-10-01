@@ -2,10 +2,11 @@ import { useEffect, useRef } from "react";
 import type { MouseEvent } from "react";
 import clsx from "clsx";
 import { MenuSurface, useAnchoredMaxHeight } from "@deepseek-ai/dsh-client-ui-primitives";
-import type { SkillErrorInfo, SkillMetadata, SkillScope } from "../../../shared/protocol";
+import type { SkillErrorInfo, SkillScope } from "../../../shared/protocol";
 import { useT } from "../../i18n";
 import type { MessageKey } from "../../i18n";
 import { TESTID } from "../testids";
+import type { MenuOption } from "./commands";
 import { MAX_SKILLS_PER_MESSAGE, skillSummary } from "./skill-draft";
 import css from "./SkillMenu.module.css";
 
@@ -30,7 +31,8 @@ export interface SkillMenuProps {
   listboxId: string;
   optionId: (index: number) => string;
   status: SkillMenuStatus;
-  rows: readonly SkillMetadata[];
+  /** Skill and command rows in display order; `activeIndex`, `onPick` and `onHover` index into it. */
+  options: readonly MenuOption[];
   /** Per-file diagnostics of a ready catalog; shown as one warning row beside the skills. */
   diagnostics: readonly SkillErrorInfo[];
   catalogEmpty: boolean;
@@ -55,7 +57,7 @@ export function SkillMenu({
   listboxId,
   optionId,
   status,
-  rows,
+  options,
   diagnostics,
   catalogEmpty,
   activeIndex,
@@ -67,7 +69,7 @@ export function SkillMenu({
 }: SkillMenuProps) {
   const t = useT();
   const menuRef = useRef<HTMLDivElement>(null);
-  const maxHeight = useAnchoredMaxHeight(menuRef, MAX_HEIGHT, `${status.kind}:${rows.length}:${String(limitReached)}`, TOP_MARGIN);
+  const maxHeight = useAnchoredMaxHeight(menuRef, MAX_HEIGHT, `${status.kind}:${options.length}:${String(limitReached)}`, TOP_MARGIN);
 
   useEffect(() => {
     if (activeIndex < 0) return;
@@ -122,19 +124,52 @@ export function SkillMenu({
           <span className={css.statusText}>{t("composer.skills.diagnostics", { count: diagnostics.length })}</span>
         </div>
       )}
-      {status.kind === "loading" && rows.length === 0 && (
+      {status.kind === "loading" && options.length === 0 && (
         <div className={css.status} role="status" aria-label={t("composer.skills.loading")}>
           <span className={css.skeletonBar} style={{ width: "40%" }} />
         </div>
       )}
-      {status.kind === "ready" && rows.length === 0 && (
+      {status.kind === "ready" && options.length === 0 && (
         <div className={css.status} role="status" data-testid={TESTID.skillMenuEmpty}>
           <span className={css.statusText}>{t(catalogEmpty ? "composer.skills.empty" : "composer.skills.noMatch")}</span>
         </div>
       )}
       <div id={listboxId} className={clsx(css.viewport, "scrollable")} role="listbox" aria-label={t("composer.skills.label")}>
-        {rows.map((skill, index) => {
+        {options.map((option, index) => {
           const active = index === activeIndex;
+          if (option.kind === "command") {
+            const { command } = option;
+            return (
+              <button
+                key={`command:${command.name}`}
+                id={optionId(index)}
+                type="button"
+                role="option"
+                tabIndex={-1}
+                aria-selected={active}
+                className={clsx(css.item, active && css.active)}
+                data-testid={TESTID.commandOption}
+                data-command={command.name}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  onPick(index);
+                }}
+                onMouseMove={active ? undefined : () => onHover(index)}
+              >
+                <span className={css.head}>
+                  <span className={css.name}>{`/${command.name}`}</span>
+                  <span className={css.scope}>{t("btw.command.kind")}</span>
+                  {command.aliases.map((alias) => (
+                    <span key={alias} className={css.scope}>
+                      {t("btw.command.alias", { alias })}
+                    </span>
+                  ))}
+                </span>
+                <span className={css.description}>{t(command.description)}</span>
+              </button>
+            );
+          }
+          const { skill } = option;
           const summary = skillSummary(skill);
           return (
             <button

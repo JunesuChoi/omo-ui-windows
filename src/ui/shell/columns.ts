@@ -1,8 +1,6 @@
 /**
- * Column geometry ported from DSH ui-layout/columns.ts, reduced to the two tracks OmO UI
- * renders in v1 (sidebar | center). The right track parameter stays so a later right
- * sidebar can reuse the same solve: the right column shrinks, then loses its track,
- * before the center drops below its minimum.
+ * Column geometry ported from DSH ui-layout/columns.ts for the tracks sidebar | center | side chat panel: the right
+ * column shrinks, then loses its track, before the center drops below its minimum.
  */
 
 export interface Columns {

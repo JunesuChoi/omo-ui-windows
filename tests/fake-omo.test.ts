@@ -383,6 +383,30 @@ describe("fake omo binary", () => {
     expect(await client.close()).toBe(0);
   });
 
+  it("answers an OmO UI side chat with its question and the main messages it carried", async () => {
+    const box = await sandbox();
+    const client = box.launch();
+    await client.waitStderr("fake app-server listening on stdio://");
+    await client.handshake();
+    const threadId = await client.startThread(box.dir);
+    const prompt = [
+      "[OmO UI side chat background]",
+      "Main thread: Fix login",
+      "",
+      "<user>\nfix the login bug\n</user>",
+      "<assistant>\nFixed it.\n</assistant>",
+      "[end of background]",
+      "",
+      "Side question: what changed?",
+    ].join("\n");
+
+    const turnId = await client.startTurn(threadId, prompt);
+    await client.waitTurnCompleted(turnId);
+
+    expect(client.agentTexts()).toEqual(['Side answer to "what changed?" from 2 main messages; the first main request was "fix the login bug".']);
+    expect(await client.close()).toBe(0);
+  });
+
   it("reports protocol errors for early, repeated and unknown requests", async () => {
     const client = (await sandbox()).launch();
 

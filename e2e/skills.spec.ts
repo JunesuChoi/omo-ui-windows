@@ -113,13 +113,16 @@ test("arrows wrap, filtering ranks ulw-loop, Tab inserts and Escape preserves", 
   const { page, readFakeLog } = current();
   const input = byTestId(page, TESTID.composerInput);
   const rows = byTestId(page, TESTID.skillOption);
+  const options = byTestId(page, TESTID.skillMenu).getByRole("option");
   await input.fill("/");
   await expect(rows.first()).toHaveAttribute("aria-selected", "true");
+  await expect(options).toHaveCount(7);
+  await expect(options.last()).toHaveAttribute("data-command", "btw");
   await input.press("ArrowUp");
-  await expect(rows.last()).toHaveAttribute("aria-selected", "true");
+  await expect(options.last()).toHaveAttribute("aria-selected", "true");
   await input.press("ArrowDown");
   await expect(rows.first()).toHaveAttribute("aria-selected", "true");
-  for (let index = 0; index < 6; index += 1) await input.press("ArrowDown");
+  for (let index = 0; index < 7; index += 1) await input.press("ArrowDown");
   await expect(rows.first()).toHaveAttribute("aria-selected", "true");
   await input.fill("/ulw");
   await expect(rows.first()).toHaveAttribute("data-skill-name", "ulw-loop");

@@ -10,6 +10,10 @@ export interface AppFrameProps {
   sidebarVisible: boolean;
   sidebarWidth: number;
   onSidebarWidthChange(width: number): void;
+  /** Renders the right panel; it docks as a third column when the frame has room and overlays the main column otherwise. */
+  rightPanel?: ((placement: "docked" | "overlay") => ReactNode) | null;
+  /** Requested docked width of the right panel in px; columns.ts clamps it. */
+  rightPanelWidth?: number;
 }
 
 interface DragHandleProps {
@@ -90,11 +94,19 @@ function DragHandle(props: DragHandleProps) {
 }
 
 /**
- * Two-column shell (sidebar | main) ported from DSH ui-layout AppFrame: grid tracks solved by
+ * Shell (sidebar | main | optional right panel) ported from DSH ui-layout AppFrame: grid tracks solved by
  * columns.ts, a pointer-capture drag handle on the sidebar edge, eased tracks only on a
  * show/hide toggle, and macOS window chrome (data-platform, vibrancy sidebar, drag strips).
  */
-export function AppFrame({ sidebar, main, sidebarVisible, sidebarWidth, onSidebarWidthChange }: AppFrameProps) {
+export function AppFrame({
+  sidebar,
+  main,
+  sidebarVisible,
+  sidebarWidth,
+  onSidebarWidthChange,
+  rightPanel = null,
+  rightPanelWidth = 0,
+}: AppFrameProps) {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const [viewport, setViewport] = useState(0);
 
@@ -127,7 +139,8 @@ export function AppFrame({ sidebar, main, sidebarVisible, sidebarWidth, onSideba
     };
   }, []);
 
-  const cols = computeColumns(viewport, sidebarVisible ? sidebarWidth : 0, 0);
+  const cols = computeColumns(viewport, sidebarVisible ? sidebarWidth : 0, rightPanel === null ? 0 : rightPanelWidth);
+  const docked = rightPanel !== null && cols.rightbar > 0;
   const colsRef = useRef(cols);
   colsRef.current = cols;
   const dragBase = useRef(0);
@@ -171,7 +184,7 @@ export function AppFrame({ sidebar, main, sidebarVisible, sidebarWidth, onSideba
     <div
       ref={frameRef}
       className={css.frame}
-      style={{ gridTemplateColumns: `${cols.sidebar}px minmax(0px, 1fr)` }}
+      style={{ gridTemplateColumns: `${cols.sidebar}px minmax(0px, 1fr)${docked ? ` ${cols.rightbar}px` : ""}` }}
       data-testid={TESTID.appFrame}
       data-sidebar-collapsed={!sidebarVisible || undefined}
       data-dragging={dragging || undefined}
@@ -184,7 +197,14 @@ export function AppFrame({ sidebar, main, sidebarVisible, sidebarWidth, onSideba
       <div className={css.centerCol}>
         <div className={css.dragStrip} data-window-drag />
         {main}
+        {rightPanel !== null && !docked && <div className={css.rightOverlay}>{rightPanel("overlay")}</div>}
       </div>
+      {docked && (
+        <div className={css.rightCol}>
+          <div className={css.dragStrip} data-window-drag />
+          {rightPanel("docked")}
+        </div>
+      )}
       {sidebarVisible && <DragHandle left={cols.sidebar} onStart={onDragStart} onDrag={onDrag} onEnd={onDragEnd} />}
     </div>
   );
