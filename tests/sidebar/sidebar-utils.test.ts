@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import { t as translate } from "../../src/i18n";
 import type { ThreadSummary, WorkspaceGroup } from "../../src/state";
 import { filterGroups, threadMatches } from "../../src/ui/sidebar/thread-filter";
+import type { ThreadFilter } from "../../src/ui/sidebar/thread-filter";
 import { formatThreadTime } from "../../src/ui/sidebar/thread-time";
 import { workspaceHue, workspaceInitials } from "../../src/ui/sidebar/workspace-badge";
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
+const NO_FILTER: ThreadFilter = { query: "", runningOnly: false, period: "any" };
 
 function thread(id: string, overrides: Partial<ThreadSummary> = {}): ThreadSummary {
   return { id, cwd: "/w/server", name: null, preview: "", updatedAt: 0, status: { type: "idle" }, path: null, source: null, ...overrides };
@@ -75,12 +77,57 @@ describe("threadMatches and filterGroups", () => {
 
   it("treats a blank query as matching everything", () => {
     expect(threadMatches(thread("c"), "New thread", "   ")).toBe(true);
-    expect(filterGroups(groups, "", titled)).toEqual(groups);
+    expect(filterGroups(groups, { ...NO_FILTER, query: "  " }, 0, titled)).toEqual(groups);
   });
 
   it("drops groups whose threads all miss", () => {
-    const filtered = filterGroups(groups, "login", titled);
+    const filtered = filterGroups(groups, { ...NO_FILTER, query: "login" }, 0, titled);
     expect(filtered.map((group) => group.cwd)).toEqual(["/w/server"]);
     expect(filtered[0]?.threads.map((entry) => entry.id)).toEqual(["a"]);
+  });
+});
+
+describe("filterGroups running and period filters", () => {
+  const now = new Date(2026, 5, 15, 15, 0).getTime();
+  const groups: WorkspaceGroup[] = [
+    {
+      cwd: "/w/server",
+      label: "server",
+      threads: [
+        thread("running", { status: { type: "active", activeFlags: [] }, updatedAt: now - 5 * MIN }),
+        thread("this-morning", { updatedAt: new Date(2026, 5, 15, 0, 30).getTime() }),
+        thread("last-night", { updatedAt: new Date(2026, 5, 14, 23, 30).getTime() }),
+      ],
+    },
+    {
+      cwd: "/w/client",
+      label: "client",
+      threads: [
+        thread("ten-days", { cwd: "/w/client", name: "Ten days old", updatedAt: now - 10 * DAY }),
+        thread("forty-days", { cwd: "/w/client", name: "Forty days old", updatedAt: now - 40 * DAY }),
+      ],
+    },
+  ];
+  const kept = (filter: Partial<ThreadFilter>): string[] =>
+    filterGroups(groups, { ...NO_FILTER, ...filter }, now, (candidate) => candidate.name ?? "").flatMap((group) =>
+      group.threads.map((entry) => entry.id),
+    );
+
+  it("keeps only running threads when runningOnly is set", () => {
+    expect(kept({ runningOnly: true })).toEqual(["running"]);
+  });
+
+  it("starts today at local midnight", () => {
+    expect(kept({ period: "today" })).toEqual(["running", "this-morning"]);
+  });
+
+  it("keeps the last 7 or 30 days", () => {
+    expect(kept({ period: "week" })).toEqual(["running", "this-morning", "last-night"]);
+    expect(kept({ period: "month" })).toEqual(["running", "this-morning", "last-night", "ten-days"]);
+  });
+
+  it("requires every part of the filter", () => {
+    expect(kept({ runningOnly: true, period: "today" })).toEqual(["running"]);
+    expect(kept({ period: "month", query: "days" })).toEqual(["ten-days"]);
   });
 });

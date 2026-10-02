@@ -17,6 +17,7 @@ import { useT } from "../../i18n";
 import { threadTitle } from "../conversation/format";
 import { GripGlyph } from "../glyphs";
 import { TESTID } from "../testids";
+import { isRunning } from "./thread-filter";
 import { formatThreadTime } from "./thread-time";
 import { WorkspaceBadge } from "./WorkspaceBadge";
 import css from "./Rows.module.css";
@@ -130,7 +131,7 @@ export function ThreadRow({ thread, active, nowMs, onOpen, onRename, onRequestDe
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const title = threadTitle(thread, t("shell.newSession"));
-  const running = thread.status.type === "active";
+  const running = isRunning(thread);
 
   const rowProps = {
     "data-testid": TESTID.threadRow,

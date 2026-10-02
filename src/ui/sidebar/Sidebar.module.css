@@ -168,6 +168,19 @@
   color: var(--dsw-alias-label-primary);
 }
 
+.filters {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -4px 2px 10px;
+}
+
+.filterCount {
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
 .region {
   flex: 1;
   min-height: 0;

@@ -6,6 +6,7 @@ import {
   IconQueueOutlineRegular,
   IconSearchOutlineRegular,
   IconSettingsOutlineMedium,
+  Pill,
   StateDot,
   Tooltip,
 } from "@deepseek-ai/dsh-client-ui-primitives";
@@ -24,7 +25,8 @@ import { uiState } from "../ui-state";
 import { DeleteThreadDialog } from "./DeleteThreadDialog";
 import type { DeleteTarget } from "./DeleteThreadDialog";
 import { ThreadRow, WorkspaceRow } from "./Rows";
-import { filterGroups } from "./thread-filter";
+import { filterGroups, isRunning } from "./thread-filter";
+import type { ThreadPeriod } from "./thread-filter";
 import css from "./Sidebar.module.css";
 
 const DOT_STATE: Record<BridgeState, StateDotState> = {
@@ -38,6 +40,8 @@ const DOT_STATE: Record<BridgeState, StateDotState> = {
 };
 
 const CLOCK_TICK_MS = 30_000;
+
+const PERIODS: readonly Exclude<ThreadPeriod, "any">[] = ["today", "week", "month"];
 
 function useNowMs(): number {
   const [now, setNow] = useState(() => Date.now());
@@ -85,6 +89,8 @@ export function Sidebar() {
   const nowMs = useNowMs();
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
   const [query, setQuery] = useState("");
+  const [runningOnly, setRunningOnly] = useState(false);
+  const [period, setPeriod] = useState<ThreadPeriod>("any");
   const [loadingMore, setLoadingMore] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const groupsRef = useRef(groups);
@@ -93,10 +99,12 @@ export function Sidebar() {
 
   const fallbackTitle = t("shell.newSession");
   const visibleGroups = useMemo(
-    () => filterGroups(groups, query, (thread: ThreadSummary) => threadTitle(thread, fallbackTitle)),
-    [groups, query, fallbackTitle],
+    () => filterGroups(groups, { query, runningOnly, period }, nowMs, (thread: ThreadSummary) => threadTitle(thread, fallbackTitle)),
+    [groups, query, runningOnly, period, nowMs, fallbackTitle],
   );
+  const runningCount = useMemo(() => groups.reduce((count, group) => count + group.threads.filter(isRunning).length, 0), [groups]);
   const searching = query.trim() !== "";
+  const filtering = runningOnly || period !== "any";
 
   const expand = (cwd: string): void => {
     setCollapsed((current) => {
@@ -144,6 +152,11 @@ export function Sidebar() {
   const clearSearch = (): void => {
     setQuery("");
     searchRef.current?.focus();
+  };
+
+  const clearFilters = (): void => {
+    setRunningOnly(false);
+    setPeriod("any");
   };
 
   const onSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
@@ -203,6 +216,31 @@ export function Sidebar() {
           </button>
         )}
       </div>
+      <div className={css.filters} role="group" aria-label={t("shell.filter.label")} data-testid={TESTID.sidebarFilters}>
+        <Pill
+          active={runningOnly}
+          aria-pressed={runningOnly}
+          title={t("shell.filter.runningHint")}
+          data-testid={TESTID.sidebarFilterRunning}
+          onClick={() => setRunningOnly((on) => !on)}
+        >
+          {t("shell.filter.running")}
+          {runningCount > 0 && <span className={css.filterCount}>{runningCount}</span>}
+        </Pill>
+        {PERIODS.map((option) => (
+          <Pill
+            key={option}
+            active={period === option}
+            aria-pressed={period === option}
+            title={t(`shell.filter.${option}Hint`)}
+            data-testid={TESTID.sidebarFilterPeriod}
+            data-period={option}
+            onClick={() => setPeriod((current) => (current === option ? "any" : option))}
+          >
+            {t(`shell.filter.${option}`)}
+          </Pill>
+        ))}
+      </div>
       <div className={css.region}>
         <div className={css.list}>
           {threadsLoaded && groups.length === 0 && (
@@ -211,13 +249,18 @@ export function Sidebar() {
               <div>{t("shell.noSessions")}</div>
             </div>
           )}
-          {searching && groups.length > 0 && visibleGroups.length === 0 && (
+          {(searching || filtering) && groups.length > 0 && visibleGroups.length === 0 && (
             <div className={css.emptyState} data-testid={TESTID.sidebarNoMatch} role="status">
-              <div>{t("shell.search.noMatch", { query: query.trim() })}</div>
+              <div>{searching ? t("shell.search.noMatch", { query: query.trim() }) : t("shell.filter.noMatch")}</div>
+              {filtering && (
+                <Pill data-testid={TESTID.sidebarFilterClear} onClick={clearFilters}>
+                  {t("shell.filter.clear")}
+                </Pill>
+              )}
             </div>
           )}
           {visibleGroups.map((group) => {
-            const expanded = searching || !collapsed.has(group.cwd);
+            const expanded = searching || filtering || !collapsed.has(group.cwd);
             const holdsActive = group.threads.some((thread) => thread.id === activeThreadId);
             return (
               <div

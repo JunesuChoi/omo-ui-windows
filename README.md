@@ -162,7 +162,7 @@ xattr -dr com.apple.quarantine "/Applications/OmO UI.app"
 ## Using OmO UI
 
 - **New session**: choose a workspace folder; omo runs with that folder as its working directory. Recent folders are remembered.
-- **Sidebar**: lists every omo session, including sessions you started in the terminal, grouped by workspace and searchable. Selecting one loads its full history.
+- **Sidebar**: lists every omo session, including sessions you started in the terminal, grouped by workspace and searchable. The pills under the search keep only running sessions, or sessions updated today or in the last 7 or 30 days. Selecting one loads its full history.
 - **Conversation**: answers stream as they are written. Reasoning, tool calls (commands, file edits, searches) and their results appear as cards.
 - **Skills**: type `/` at the start of a message or after a space to list the skills omo can run in the session's workspace, plus the `/btw` command; the list loads once the session has started. Use the arrow keys and Enter or Tab, or click, to insert a skill; Escape closes the list. Pick up to five skills for one message; OmO UI sends them to omo as `/skill:name` commands in front of your text.
 - **omo's own message parts**: sent and restored messages show invoked skills as chips, with their instructions behind **Show skill instructions**. Reminders and pointers that omo adds to a message fold into an **omo context** chip, and session titles show `/skill` names instead of the injected text.
