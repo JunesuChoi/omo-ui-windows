@@ -86,12 +86,12 @@
   background:
     linear-gradient(
       to bottom,
-      rgb(122 155 240 / 0.1),
-      rgb(122 155 240 / 0) 35%,
+      rgb(var(--dsw-omo-sidebar-tint) / 0.1),
+      rgb(var(--dsw-omo-sidebar-tint) / 0) 35%,
       rgb(143 137 184 / 0) 68%,
       rgb(143 137 184 / 0.09)
     ),
-    color-mix(in srgb, color-mix(in srgb, var(--dsw-specific-sidebar-fill) 97%, rgb(122 155 240)) 40%, transparent);
+    color-mix(in srgb, color-mix(in srgb, var(--dsw-specific-sidebar-fill) 97%, rgb(var(--dsw-omo-sidebar-tint))) 40%, transparent);
   border-right: none;
 }
 
@@ -99,8 +99,8 @@
   background:
     linear-gradient(
       to bottom,
-      rgb(122 155 240 / 0.08),
-      rgb(122 155 240 / 0) 35%,
+      rgb(var(--dsw-omo-sidebar-tint) / 0.08),
+      rgb(var(--dsw-omo-sidebar-tint) / 0) 35%,
       rgb(143 137 184 / 0) 68%,
       rgb(143 137 184 / 0.07)
     ),
