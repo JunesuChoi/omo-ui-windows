@@ -225,6 +225,32 @@ function loadSessionFile(file) {
   addThread(thread, { archived, lastEntryId });
 }
 
+/**
+ * FAKE_OMO_LONG_SESSION is JSON { id, cwd, turns, toolCalls }. Before the threads are listed the fake records that
+ * session once: every turn holds a user message, `toolCalls` eval calls with their results and a markdown answer, so a
+ * test can open a conversation with tens of thousands of DOM nodes.
+ */
+function writeLongSession() {
+  const raw = process.env.FAKE_OMO_LONG_SESSION;
+  if (raw === undefined) return;
+  const spec = JSON.parse(raw);
+  if (!isRecord(spec) || typeof spec.id !== "string" || typeof spec.cwd !== "string" || !Number.isInteger(spec.turns) || !Number.isInteger(spec.toolCalls)) {
+    throw new Error("FAKE_OMO_LONG_SESSION must be JSON { id, cwd, turns, toolCalls }");
+  }
+  const path = join(sessionsDir, `${spec.id}.jsonl`);
+  if (existsSync(path)) return;
+  const record = { thread: { id: spec.id, path, cwd: spec.cwd, createdAt: nowSec() - 3600 }, lastEntryId: null };
+  for (let turn = 1; turn <= spec.turns; turn += 1) {
+    recordEntry(record, userEntry(`Step ${turn}: check how the cart totals are computed.`));
+    for (let call = 1; call <= spec.toolCalls; call += 1) {
+      const id = `long-${turn}-${call}`;
+      recordEntry(record, assistantEntry([{ type: "toolCall", id, name: "eval", arguments: { language: "js", code: `print(await run("grep -n total${call} src/lib/cart.ts"))` } }], "toolUse"));
+      recordEntry(record, toolResultEntry(id, "eval", `src/lib/cart.ts:${call}: export const total${call} = subtotal + tax;`, false));
+    }
+    recordEntry(record, assistantEntry([{ type: "text", text: FLOOD_TEXT }], "stop"));
+  }
+}
+
 function loadPersistedThreads() {
   for (const name of readdirSync(sessionsDir)) {
     if (name.endsWith(".jsonl")) loadSessionFile(join(sessionsDir, name));
@@ -463,6 +489,36 @@ async function runMultiQuestion(record, turn) {
   closeAgentMessage(record, turn, item, "stop");
 }
 
+const FLOOD_TEXT = [
+  "## Checking the cart totals\n\n",
+  "Totals come from `cartTotals` in `src/lib/cart.ts`: each line adds `price * quantity` in integer cents, ",
+  "and tax is rounded once on the subtotal, so three items at 1006 cents give 241 cents of tax.\n\n",
+  "| Case | Subtotal | Tax | Total |\n|---|---|---|---|\n| one item | 5000 | 400 | 5400 |\n| three items | 3018 | 241 | 3259 |\n\n",
+  "```ts\nexport function cartTotals(items: CartItem[]): Totals {\n  const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);\n",
+  "  const tax = Math.round(subtotal * 0.08);\n  return { subtotal, tax, total: subtotal + tax };\n}\n```\n\n",
+].join("");
+const FLOOD_CHUNKS = FLOOD_TEXT.match(/[\s\S]{1,12}/g);
+
+/**
+ * Streams a long markdown answer as many small deltas, the way a busy turn does:
+ * SCENARIO:flood[:<chunks>[:<intervalMs>]], 1500 chunks every 10 ms by default. Every 25th chunk ends with a
+ * ⟦<index>@<send time in ms>⟧ marker, so a test can tell how far the rendered text lags behind the stream.
+ */
+async function runFlood(record, turn, text) {
+  const [, chunks = "1500", intervalMs = "10"] = /SCENARIO:flood(?::(\d+))?(?::(\d+))?/.exec(text) ?? [];
+  const item = openAgentMessage(turn);
+  try {
+    for (let index = 0; index < Number(chunks); index += 1) {
+      await sleep(turn, Number(intervalMs));
+      const chunk = FLOOD_CHUNKS[index % FLOOD_CHUNKS.length];
+      appendAgentDelta(turn, item, index % 25 === 24 ? `${chunk}⟦${index}@${Date.now()}⟧` : chunk);
+    }
+  } catch (error) {
+    if (!(error instanceof Interrupted)) throw error;
+  }
+  closeAgentMessage(record, turn, item, turn.interrupted ? "aborted" : "stop");
+}
+
 const SIDE_MARKER = "[OmO UI side chat background]";
 
 /** Answers an OmO UI side chat's first message, naming its question and how much main context it carried. */
@@ -630,6 +686,7 @@ function runScenario(record, turn, text) {
   if (text.includes("SCENARIO:full")) return runFull(record, turn);
   if (text.includes("SCENARIO:slow")) return runSlow(record, turn);
   if (text.includes("SCENARIO:multi-question")) return runMultiQuestion(record, turn);
+  if (text.includes("SCENARIO:flood")) return runFlood(record, turn, text);
   return runEcho(record, turn, text);
 }
 
@@ -1022,6 +1079,7 @@ function serve() {
   sessionsDir = join(home, "sessions");
   mkdirSync(sessionsDir, { recursive: true });
   logPath = process.env.FAKE_OMO_LOG;
+  writeLongSession();
   loadPersistedThreads();
   process.stderr.write("fake app-server listening on stdio://\n");
   const lines = createInterface({ input: process.stdin });

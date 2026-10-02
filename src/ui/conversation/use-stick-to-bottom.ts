@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 
 const STICK_THRESHOLD_PX = 80;
 const SMOOTH_JUMP_VIEWPORTS = 2;
@@ -16,9 +16,12 @@ function isEditable(target: EventTarget | null): boolean {
 }
 
 /**
- * Keeps the scroller pinned to the bottom after every render and every content resize until the
- * user scrolls more than 80px up; `showJump` is true while unpinned. An upward wheel or key gesture
- * unpins at once, so a streaming update cannot pull the reader back before the scroll event lands.
+ * Keeps the scroller pinned to the bottom whenever its content or viewport resizes, until the reader scrolls up to more
+ * than 80px from the bottom; `showJump` is true while unpinned. Pinning runs from a ResizeObserver, after the browser's
+ * own layout and before paint, not after each render: reading scrollHeight right after a render forces a synchronous
+ * layout of the whole transcript, which in a long conversation costs milliseconds per streamed delta. Content that grows
+ * between two pins moves the bottom away without any scrolling, so only an upward scroll unpins; an upward wheel or key
+ * gesture unpins at once, so a streaming update cannot pull the reader back before the scroll event lands.
  */
 export function useStickToBottom(): StickToBottom {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -32,27 +35,27 @@ export function useStickToBottom(): StickToBottom {
     if (scroller !== null) scroller.scrollTop = scroller.scrollHeight;
   }, []);
 
-  useLayoutEffect(() => {
-    if (pinned.current && !jumping.current) toBottom();
-  });
-
   useEffect(() => {
     const scroller = scrollRef.current;
     const content = contentRef.current;
     if (scroller === null || content === null) return;
     const distance = (): number => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+    let lastTop = scroller.scrollTop;
     const release = (): void => {
       jumping.current = false;
       pinned.current = false;
     };
     const onScroll = (): void => {
+      const top = scroller.scrollTop;
+      const movedUp = top < lastTop - 1;
+      lastTop = top;
       if (jumping.current) {
         if (distance() > 1) return;
         jumping.current = false;
       }
-      const near = distance() <= STICK_THRESHOLD_PX;
-      pinned.current = near;
-      setShowJump(!near);
+      if (distance() <= STICK_THRESHOLD_PX) pinned.current = true;
+      else if (movedUp) pinned.current = false;
+      setShowJump(!pinned.current);
     };
     const onScrollEnd = (): void => {
       if (!jumping.current) return;
