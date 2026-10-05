@@ -9,11 +9,19 @@ import SwiftUI
                 .environmentObject(model)
                 .tint(Color(red: 139 / 255, green: 92 / 255, blue: 246 / 255))
                 .task { model.start() }
-                .onChange(of: scenePhase) { _, phase in
-                    // iOS suspends socket work in the background; reconnect on foreground.
-                    if phase == .active { model.start() }
-                    else if phase == .background { model.stop() }
+                .onChange(of: model.ready) { _, ready in
+                    UIApplication.shared.isIdleTimerDisabled = ready
                 }
+                .onChange(of: scenePhase) { _, phase in
+                    // iOS suspends socket work in the background; reconnect and refresh on foreground.
+                    if phase == .active {
+                        model.start()
+                        Task { await model.refresh() }
+                    } else if phase == .background {
+                        model.stop()
+                    }
+                }
+                .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
         }
     }
 }
