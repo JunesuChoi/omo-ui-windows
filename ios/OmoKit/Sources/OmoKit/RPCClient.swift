@@ -30,26 +30,44 @@ import Foundation
     public var onDisconnect: ((Error?) -> Void)?
     public var pendingCount: Int { pending.count }
 
-    public init(transport: BridgeTransport) {
+    private static let readOnlyTimeoutNanoseconds: UInt64 = 30_000_000_000
+    private static let workTimeoutNanoseconds: UInt64? = nil
+    private let timeoutOverride: ((String) -> UInt64?)?
+
+    public init(transport: BridgeTransport, timeoutOverride: ((String) -> UInt64?)? = nil) {
         self.transport = transport
+        self.timeoutOverride = timeoutOverride
         transport.onMessage = { [weak self] in self?.receive($0) }
         transport.onDisconnect = { [weak self] error in
             self?.disconnect()
             self?.onDisconnect?(error)
         }
     }
-    public func call(_ method: String, params: JSONValue = .object([:]), timeoutNanoseconds: UInt64 = 30_000_000_000) async throws -> JSONValue {
+
+    private static func timeout(for method: String) -> UInt64? {
+        switch method {
+        case "turn/start", "turn/steer", "thread/start", "thread/resume":
+            return workTimeoutNanoseconds
+        case "thread/list", "thread/read", "model/list", "skills/list", "thread/goal/get":
+            return readOnlyTimeoutNanoseconds
+        default:
+            return readOnlyTimeoutNanoseconds
+        }
+    }
+
+    public func call(_ method: String, params: JSONValue = .object([:])) async throws -> JSONValue {
         let id = nextID
         nextID += 1
         return try await withTaskCancellationHandler(operation: {
             try Task.checkCancellation()
             return try await withCheckedThrowingContinuation { continuation in
-                enqueue(id: id, method: method, params: params, timeoutNanoseconds: timeoutNanoseconds, continuation: continuation)
+                enqueue(id: id, method: method, params: params, timeoutNanoseconds: timeoutOverride?(method) ?? Self.timeout(for: method), continuation: continuation)
             }
         }, onCancel: { Task { @MainActor [weak self] in self?.finish(id, .failure(Failure.cancelled)) } })
     }
-    private func enqueue(id: Int, method: String, params: JSONValue, timeoutNanoseconds: UInt64, continuation: CheckedContinuation<JSONValue, Error>) {
+    private func enqueue(id: Int, method: String, params: JSONValue, timeoutNanoseconds: UInt64?, continuation: CheckedContinuation<JSONValue, Error>) {
         let timeout = Task { [weak self] in
+            guard let timeoutNanoseconds else { return }
             do { try await Task.sleep(nanoseconds: timeoutNanoseconds) }
             catch { return }
             self?.finish(id, .failure(Failure.timeout))

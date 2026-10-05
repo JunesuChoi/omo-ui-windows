@@ -24,6 +24,25 @@ import XCTest
 }
 
 final class RPCClientTests: XCTestCase {
+    @MainActor func testTurnStartSucceedsAfterMoreThanOldDefaultDeadline() async throws {
+        let transport = TestTransport()
+        let client = RPCClient(transport: transport, timeoutOverride: { _ in 1_000_000 })
+        let sent = expectation(description: "Turn start sent")
+        transport.onSend = { message in
+            guard case let .rpc(id, method, _) = message, method == "turn/start" else { return }
+            sent.fulfill()
+            Task { @MainActor in
+                // Longer than the injected deadline, without sleeping in real time.
+                try? await Task.sleep(nanoseconds: 2_000_000)
+                try? transport.deliver(.rpcResult(id: id, result: .object([:])))
+            }
+        }
+        let call = Task { try await client.call("turn/start") }
+        await fulfillment(of: [sent], timeout: 1)
+        let result = try await call.value
+        XCTAssertEqual(result, .object([:]))
+    }
+
     @MainActor func testResultThroughFramesAndUniqueIDs() async throws {
         let transport = TestTransport()
         let client = RPCClient(transport: transport)
