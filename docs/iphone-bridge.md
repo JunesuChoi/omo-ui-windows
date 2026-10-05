@@ -20,6 +20,8 @@ Only `ConnectionType` `USB` devices are used. A failed connect (the app is not r
 
 Each frame is a 4-byte big-endian unsigned length followed by that many bytes of UTF-8 JSON. Frames over 8 MiB close the connection.
 
+A frame that is not a JSON object closes the connection. A JSON object whose `type` the receiver does not know is ignored and the connection stays open, so either side can add frame types without breaking an older peer. On the Mac, an `rpc` frame without a finite numeric `id` still closes the connection.
+
 | Direction | Frame |
 |---|---|
 | Mac → phone | `{"type":"hello","version":1,"macName":string,"bridge":{"state":string}}` first, after the stream opens |
@@ -27,11 +29,17 @@ Each frame is a 4-byte big-endian unsigned length followed by that many bytes of
 | phone → Mac | `{"type":"rpc","id":number,"method":string,"params":object}` |
 | Mac → phone | `{"type":"rpcResult","id":number,"result":any}` or `{"type":"rpcError","id":number,"error":{"code":number,"message":string}}` |
 | Mac → phone | `{"type":"notification","notification":{"method":string,"params":object}}` for every omo app-server notification |
+| Mac → phone | `{"type":"serverRequest","id":number\|string,"method":string,"params":object}` for every omo server request (approvals, questions); requests still waiting when the phone connects are sent right after `bridgeStatus` |
+| phone → Mac | `{"type":"serverAnswer","id":number\|string,"result":object}` answers the server request with the same `id`; the Mac passes `result` to omo unchanged |
 | either | `{"type":"ping","t":number}` / `{"type":"pong","t":number}` every 10 s; a side that hears nothing for 30 s closes the stream |
 
 ## Allowed methods
 
-The Mac forwards only: `thread/list`, `thread/start`, `thread/resume`, `thread/read`, `thread/goal/get`, `turn/start`, `turn/steer`, `turn/interrupt`, `model/list`, `skills/list`. Anything else gets `rpcError` code -32601 without reaching omo. Server requests from omo (approvals, questions) are not forwarded in version 1; the phone shows that the Mac needs attention.
+The Mac forwards only: `thread/list`, `thread/start`, `thread/resume`, `thread/read`, `thread/goal/get`, `thread/name/set`, `thread/delete`, `thread/archive`, `turn/start`, `turn/steer`, `turn/interrupt`, `model/list`, `skills/list`. Anything else gets `rpcError` code -32601 without reaching omo.
+
+## Server requests
+
+omo's server requests (`item/commandExecution/requestApproval`, `item/fileChange/requestApproval`, `item/tool/requestUserInput`) reach every connected phone as `serverRequest` frames while the Mac window shows them too. Whichever side answers first wins: the Mac forwards a `serverAnswer` only while the request is still pending, and drops it once omo sends `serverRequest/resolved` for that id (also forwarded to the phone as a notification), once another answer was delivered, or when omo restarts. An answer whose `id` is not pending or whose `result` is not an object is ignored without a reply; there is no error frame for answers.
 
 ## Input rules
 

@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import type { Socket } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OMO_INSTALL_COMMAND, type BridgeStatus } from "../../shared/ipc";
-import { IphoneBridge, FrameDecoder, encodeFrame } from "../../electron/iphone/bridge";
+import { IphoneBridge, FrameDecoder, allowedMethod, encodeFrame } from "../../electron/iphone/bridge";
 import { Usbmux, type UsbDevice } from "../../electron/iphone/usbmux";
 import { RpcRequestError } from "../../electron/omo/app-server-client";
 import type { OmoSupervisor } from "../../electron/omo/supervisor";
@@ -28,10 +28,12 @@ function harness(enabled = true) {
   const request = vi.fn().mockResolvedValue({ ok: true });
   let notify!: Parameters<OmoSupervisor["onNotification"]>[0];
   let change!: Parameters<OmoSupervisor["onStatus"]>[0];
+  let ask!: Parameters<OmoSupervisor["onServerRequest"]>[0];
+  const respond = vi.fn().mockResolvedValue(undefined);
   const dispose = vi.fn();
-  const supervisor = { getStatus: () => status, request: request as OmoSupervisor["request"], onStatus: (listener: typeof change) => { change = listener; return dispose; }, onNotification: (listener: typeof notify) => { notify = listener; return dispose; } };
+  const supervisor = { getStatus: () => status, request: request as OmoSupervisor["request"], respond: respond as OmoSupervisor["respond"], onStatus: (listener: typeof change) => { change = listener; return dispose; }, onNotification: (listener: typeof notify) => { notify = listener; return dispose; }, onServerRequest: (listener: typeof ask) => { ask = listener; return dispose; } };
   const bridge = new IphoneBridge(supervisor, mux, enabled);
-  return { bridge, mux, socket, connect, request, dispose, attach: () => attached({ id: 1, serial: "fake", name: "iPhone" }), detach: () => detached(1), notify: (value: Parameters<typeof notify>[0]) => notify(value), change: (value: BridgeStatus) => change(value) };
+  return { bridge, mux, socket, connect, request, respond, dispose, attach: () => attached({ id: 1, serial: "fake", name: "iPhone" }), detach: () => detached(1), notify: (value: Parameters<typeof notify>[0]) => notify(value), change: (value: BridgeStatus) => change(value), ask: (value: Parameters<typeof ask>[0]) => ask(value) };
 }
 async function attach(h: ReturnType<typeof harness>): Promise<void> {
   const connected = new Promise<void>((resolve) => { const off = h.bridge.onStatus((value) => { if (value.state === "connected") { off(); resolve(); } }); });
@@ -52,7 +54,7 @@ describe("phone bridge lifecycle", () => {
       h.socket.send({ type: "ping", t: 19 });
       expect(h.socket.frames.slice(2)).toEqual([{ type: "bridgeStatus", state: "restarting" }, { type: "notification", notification: { method: "turn/completed", params: {} } }, { type: "pong", t: 19 }]);
     } finally { h.bridge.stop(); }
-    expect(h.socket.destroyed).toBe(true); expect(h.dispose).toHaveBeenCalledTimes(2);
+    expect(h.socket.destroyed).toBe(true); expect(h.dispose).toHaveBeenCalledTimes(3);
   });
   it("retries a failed connection at 2 seconds and cancels on detach", async () => {
     vi.useFakeTimers(); const h = harness(); h.connect.mockRejectedValue(new Error("app closed")); h.bridge.start(); h.attach();
@@ -89,11 +91,66 @@ describe("phone bridge lifecycle", () => {
     const h = harness(); h.bridge.start();
     try {
       await attach(h);
-      h.socket.send({ type: "rpc", id: 1, method: "thread/delete", params: {} });
+      h.socket.send({ type: "rpc", id: 1, method: "config/value/write", params: {} });
       h.socket.send({ type: "rpc", id: 2, method: "thread/start", params: [] });
       expect(h.request).not.toHaveBeenCalled();
       expect(h.socket.frames.slice(2)).toMatchObject([{ type: "rpcError", id: 1, error: { code: -32601 } }, { type: "rpcError", id: 2, error: { code: -32602 } }]);
     } finally { h.bridge.stop(); }
   });
   it("does not discover devices when disabled", () => { const h = harness(false); h.bridge.start(); expect(h.mux.listen).not.toHaveBeenCalled(); h.bridge.stop(); });
+  it("allows thread rename, delete and archive", () => {
+    for (const method of ["thread/name/set", "thread/delete", "thread/archive"]) expect(allowedMethod(method)).toBe(true);
+    expect(allowedMethod("config/value/write")).toBe(false);
+  });
+  it("ignores unknown frame types but closes on a non-object frame", async () => {
+    const h = harness(); h.bridge.start();
+    try {
+      await attach(h);
+      const response = new Promise<unknown>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("RPC response timeout")), 1000);
+        h.socket.on("frame", (frame: Record<string, unknown>) => { if (frame["type"] === "rpcResult") { clearTimeout(timer); resolve(frame); } });
+      });
+      h.socket.send({ type: "made-up" });
+      h.socket.send({ type: "rpc", id: 4, method: "thread/list", params: {} });
+      expect(await response).toEqual({ type: "rpcResult", id: 4, result: { ok: true } });
+      expect(h.socket.destroyed).toBe(false);
+      h.socket.send([1, 2]);
+      expect(h.socket.destroyed).toBe(true);
+    } finally { h.bridge.stop(); }
+  });
+});
+
+describe("phone bridge server requests", () => {
+  const approval = { id: "approval-1", method: "item/commandExecution/requestApproval", params: { threadId: "t", command: "ls" } };
+  it("forwards server requests and answers omo with the phone's result once", async () => {
+    const h = harness(); h.bridge.start();
+    try {
+      await attach(h);
+      h.ask(approval);
+      expect(h.socket.frames.at(-1)).toEqual({ type: "serverRequest", ...approval });
+      h.socket.send({ type: "serverAnswer", id: "approval-1", result: { decision: "accept" } });
+      // The bridge hands the answer to omo synchronously while handling the frame.
+      expect(h.respond).toHaveBeenCalledWith("approval-1", { decision: "accept" });
+      h.socket.send({ type: "serverAnswer", id: "approval-1", result: { decision: "decline" } });
+      h.socket.send({ type: "serverAnswer", id: 99, result: { decision: "accept" } });
+      expect(h.respond).toHaveBeenCalledTimes(1);
+      expect(h.socket.destroyed).toBe(false);
+    } finally { h.bridge.stop(); }
+  });
+  it("replays pending requests on connect and drops ones resolved on the Mac", async () => {
+    const h = harness(); h.bridge.start();
+    try {
+      h.ask(approval);
+      h.ask({ id: 7, method: "item/tool/requestUserInput", params: { questions: [] } });
+      h.notify({ method: "serverRequest/resolved", params: { threadId: "t", requestId: 7 } });
+      await attach(h);
+      expect(h.socket.frames.slice(2)).toEqual([{ type: "serverRequest", ...approval }]);
+      h.socket.send({ type: "serverAnswer", id: 7, result: { answers: {} } });
+      h.socket.send({ type: "serverAnswer", id: "approval-1", result: "accept" });
+      expect(h.respond).not.toHaveBeenCalled();
+      h.change({ ...status, state: "restarting" });
+      h.socket.send({ type: "serverAnswer", id: "approval-1", result: { decision: "accept" } });
+      expect(h.respond).not.toHaveBeenCalled();
+    } finally { h.bridge.stop(); }
+  });
 });

@@ -36,9 +36,10 @@ describe("iPhone wire codecs", () => {
     expect(() => new FrameDecoder().push(header, () => {})).toThrow("Frame too large");
     expect(() => new FrameDecoder().push(Buffer.from([0, 0, 0, 1, 123]), () => {})).toThrow();
   });
-  it("allows only the version 1 RPC methods", () => {
-    expect(IPHONE_METHODS).toHaveLength(10);
+  it("allows only the documented phone RPC methods", () => {
+    expect(IPHONE_METHODS).toHaveLength(13);
     for (const method of IPHONE_METHODS) expect(allowedMethod(method)).toBe(true);
-    for (const method of ["thread/delete", "initialize", "mcpServerStatus/list", "", null]) expect(allowedMethod(method)).toBe(false);
+    for (const method of ["thread/name/set", "thread/delete", "thread/archive"]) expect(allowedMethod(method)).toBe(true);
+    for (const method of ["initialize", "mcpServerStatus/list", "config/write", "", null]) expect(allowedMethod(method)).toBe(false);
   });
 });
