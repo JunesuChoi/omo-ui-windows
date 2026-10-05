@@ -1,4 +1,5 @@
-import { useEffect, useMemo } from "react";
+import { resolveProfile } from "./ui/composer/model-profiles";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { createActions, createAppStore, localSideStorage } from "./state";
 import { I18nProvider, resolveLocale } from "./i18n";
 import { ActionsContext, StoreContext, useAppSelector } from "./ui/app-context";
@@ -94,12 +95,23 @@ export function App() {
   useEffect(() => {
     let current = true;
     void window.omo.getPreferences().then((loaded) => {
-      if (current) uiState.setPreferences(loaded);
+      if (current) {
+        uiState.setPreferences(loaded);
+        store.dispatch({ type: "composer/modelSelected", modelId: loaded.modelId, effort: null, profile: loaded.modelProfile });
+      }
     });
     return () => {
       current = false;
     };
   }, []);
+
+  const models = useSyncExternalStore(store.subscribe, () => store.getState().models);
+  useEffect(() => {
+    const profile = store.getState().composer.profile;
+    if (!profile || models.length === 0) return;
+    const resolved = resolveProfile(models, profile);
+    store.dispatch({ type: "composer/modelSelected", modelId: resolved.model?.id ?? null, effort: resolved.effort, profile });
+  }, [models, store, preferences?.modelProfile]);
 
   const theme = preferences?.theme ?? "system";
   useEffect(() => applyThemePreference(theme), [theme]);

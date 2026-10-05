@@ -46,6 +46,9 @@ function merge(current: Preferences, patch: unknown): Preferences {
     lastWorkspace: has("lastWorkspace") ? nullableString(patch["lastWorkspace"], current.lastWorkspace) : current.lastWorkspace,
     recentWorkspaces: has("recentWorkspaces") ? recent(patch["recentWorkspaces"], current.recentWorkspaces) : current.recentWorkspaces,
     modelId: has("modelId") ? nullableString(patch["modelId"], current.modelId) : current.modelId,
+    ...(has("modelProfile") ? { modelProfile: patch["modelProfile"] === null ? null :
+      (["daily-normal", "daily-heavy", "geeky-normal", "geeky-heavy"] as const).find(value => value === patch["modelProfile"]) ?? current.modelProfile ?? null }
+      : current.modelProfile === undefined ? {} : { modelProfile: current.modelProfile }),
   };
 }
 

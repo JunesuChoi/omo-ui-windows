@@ -113,6 +113,7 @@ export interface Notice {
 }
 
 export interface ComposerState {
+  profile?: import("../../shared/ipc").ModelProfile | null;
   modelId: string | null;
   effort: ReasoningEffort | null;
 }
@@ -198,7 +199,7 @@ export type AppEvent =
   | { type: "turn/errorReconciled"; threadId: string; turn: ConversationTurn; error: TurnError }
   | { type: "user/messageSent"; threadId: string; clientId: string; text: string; sentAtMs: number }
   | { type: "user/messageFailed"; threadId: string; clientId: string; message: string }
-  | { type: "composer/modelSelected"; modelId: string | null; effort: ReasoningEffort | null }
+  | { type: "composer/modelSelected"; modelId: string | null; effort: ReasoningEffort | null; profile?: import("../../shared/ipc").ModelProfile | null }
   | { type: "notice/pushed"; notice: Notice }
   | { type: "notice/dismissed"; id: string }
   | { type: "btw/restored"; sides: SideChat[] }

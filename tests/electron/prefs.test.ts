@@ -31,6 +31,16 @@ describe("PreferencesStore", () => {
     expect(next).toEqual({ ...DEFAULT_PREFERENCES, theme: "dark", modelId: "gpt" });
   });
 
+  it("validates and persists profiles without requiring them in old preferences", async () => {
+    await writeFile(path.join(dir, "preferences.json"), JSON.stringify({ modelId: "old-model" }));
+    const store = new PreferencesStore(dir);
+    expect(store.get().modelProfile).toBeUndefined();
+    expect(store.set({ modelProfile: "geeky-heavy" }).modelProfile).toBe("geeky-heavy");
+    expect(store.set({ modelProfile: "invalid" }).modelProfile).toBe("geeky-heavy");
+    expect(new PreferencesStore(dir).get().modelProfile).toBe("geeky-heavy");
+    expect(store.set({ modelProfile: null }).modelProfile).toBeNull();
+  });
+
   it("deduplicates recent workspaces and keeps at most 10", () => {
     const store = new PreferencesStore(dir);
     const many = Array.from({ length: 12 }, (_, index) => `/w/${index}`);

@@ -77,7 +77,7 @@ export interface AppActions {
   deleteThread(threadId: string): Promise<void>;
   answerApproval(id: RequestId, decision: ApprovalDecision, reason?: string): Promise<void>;
   answerUserInput(id: RequestId, answers: Record<string, string[]>, comment?: string): Promise<void>;
-  selectModel(modelId: string | null, effort: ReasoningEffort | null): Promise<void>;
+  selectModel(modelId: string | null, effort: ReasoningEffort | null, profile?: import("../../shared/ipc").ModelProfile): Promise<void>;
   dismissNotice(id: string): void;
   /** Shows or hides the side chat panel. */
   setSidePanel(open: boolean): void;
@@ -513,10 +513,10 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
         store.dispatch({ type: "rpc/serverRequestAnswered", id });
       }),
 
-    selectModel: (modelId, effort) =>
+    selectModel: (modelId, effort, profile) =>
       guarded(async () => {
-        store.dispatch({ type: "composer/modelSelected", modelId, effort });
-        await bridge.setPreferences({ modelId });
+        store.dispatch({ type: "composer/modelSelected", modelId, effort, profile });
+        await bridge.setPreferences({ modelId, modelProfile: profile ?? null });
       }),
 
     dismissNotice(id) {
