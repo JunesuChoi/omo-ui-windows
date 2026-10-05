@@ -54,9 +54,12 @@ export interface ConversationTurn {
   origin: "live" | "history";
 }
 
+export type ImageInput = Extract<import("../../shared/protocol").UserInput, { type: "image" | "localImage" }>;
+
 export interface PendingUserMessage {
   clientId: string;
   text: string;
+  images?: readonly ImageInput[];
   sentAtMs: number;
 }
 
@@ -196,7 +199,7 @@ export type AppEvent =
   | { type: "todo/loaded"; threadId: string; todo: HistoryResult["todo"]; generation: number; revision: number }
   | { type: "history/failed"; threadId: string; message: string }
   | { type: "turn/errorReconciled"; threadId: string; turn: ConversationTurn; error: TurnError }
-  | { type: "user/messageSent"; threadId: string; clientId: string; text: string; sentAtMs: number }
+  | { type: "user/messageSent"; threadId: string; clientId: string; text: string; images?: readonly ImageInput[]; sentAtMs: number }
   | { type: "user/messageFailed"; threadId: string; clientId: string; message: string }
   | { type: "composer/modelSelected"; modelId: string | null; effort: ReasoningEffort | null }
   | { type: "notice/pushed"; notice: Notice }

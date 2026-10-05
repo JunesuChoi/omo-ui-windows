@@ -1,5 +1,6 @@
 import type { BridgeStatus, OmoBridgeApi } from "../../shared/ipc";
-import type { ApprovalDecision, ReasoningEffort, RequestId, RpcNotification, ThreadSessionResult, UserInput } from "../../shared/protocol";
+import type { ApprovalDecision, ReasoningEffort, RequestId, RpcNotification, ThreadSessionResult } from "../../shared/protocol";
+import { messageInput, type ImageInput } from "../ui/composer/attachments";
 import type { AppStore } from "./store";
 import type { AppState, NoticeCode, SessionModel, SideChat } from "./types";
 import { parseStoredSides, selectSidesOf, sideDraftKey, sideName } from "./btw";
@@ -71,7 +72,7 @@ export interface AppActions {
   /** Starts and activates a thread in `cwd`; resolves its id, or null on failure. */
   newThread(cwd: string): Promise<string | null>;
   /** Sends to the active thread: steers the running turn, otherwise resumes the thread if needed and starts a turn; resolves true when omo accepted the message. */
-  sendMessage(text: string): Promise<boolean>;
+  sendMessage(text: string, images?: readonly ImageInput[]): Promise<boolean>;
   interrupt(): Promise<void>;
   renameThread(threadId: string, name: string): Promise<void>;
   deleteThread(threadId: string): Promise<void>;
@@ -120,7 +121,6 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
       fail(error, threadId);
     }
   };
-  const textInput = (text: string): UserInput[] => [{ type: "text", text, text_elements: [] }];
   const goalReads = new Map<string, number>();
   const todoReads = new Map<string, number>();
   let connectionRevision = 0;
@@ -215,12 +215,12 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
   };
 
   /** Sends to a thread: steers its running turn, otherwise resumes the thread when needed and starts a turn. */
-  const deliver = async (threadId: string, text: string, announceSteer: boolean): Promise<boolean> => {
+  const deliver = async (threadId: string, text: string, announceSteer: boolean, images: readonly ImageInput[] = []): Promise<boolean> => {
     const conversation = store.getState().conversations[threadId];
     const activeTurnId = conversation?.activeTurnId ?? null;
     if (activeTurnId !== null) {
       try {
-        await bridge.request("turn/steer", { threadId, expectedTurnId: activeTurnId, input: textInput(text) });
+        await bridge.request("turn/steer", { threadId, expectedTurnId: activeTurnId, input: messageInput(text, images) });
         if (announceSteer) notify("info", "Message sent to the running turn.", threadId, "steered");
         return true;
       } catch (error) {
@@ -237,11 +237,11 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
         await readGoal(threadId);
         await ensureSkills(resumed.thread.cwd);
       }
-      store.dispatch({ type: "user/messageSent", threadId, clientId, text, sentAtMs: now() });
+      store.dispatch({ type: "user/messageSent", threadId, clientId, text, ...(images.length === 0 ? {} : { images }), sentAtMs: now() });
       const { modelId, effort } = store.getState().composer;
       await bridge.request("turn/start", {
         threadId,
-        input: textInput(text),
+        input: messageInput(text, images),
         clientUserMessageId: clientId,
         ...(modelId === null ? {} : { model: modelId }),
         ...(effort === null ? {} : { effort }),
@@ -447,13 +447,13 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
       }
     },
 
-    async sendMessage(text) {
+    async sendMessage(text, images = []) {
       const threadId = store.getState().activeThreadId;
       if (threadId === null) {
         notify("error", "Open or start a session before sending a message.", null, "noActiveThread");
         return false;
       }
-      return deliver(threadId, text, true);
+      return deliver(threadId, text, true, images);
     },
 
     async interrupt() {

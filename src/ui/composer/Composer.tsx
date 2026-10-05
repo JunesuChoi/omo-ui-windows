@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, MouseEvent, SyntheticEvent } from "react";
 import clsx from "clsx";
-import { IconFolderOpenOutlineRegular, Tooltip } from "@deepseek-ai/dsh-client-ui-primitives";
+import { IconFolderOpenOutlineRegular, IconPaperclipOutlineRegular, IconCloseOutlineRegular, Tooltip } from "@deepseek-ai/dsh-client-ui-primitives";
 import { ArrowUpGlyph, LockOpenGlyph } from "../glyphs";
 import { parseBtwCommand, selectIsTurnActive, selectSkillCatalog } from "../../state";
 import type { AppState, SkillCatalog } from "../../state";
@@ -19,6 +19,8 @@ import type { MenuOption } from "./commands";
 import { detectMagicKeyword, segmentDraft } from "./magic-keyword";
 import { acceptSkill, detectSkillTrigger, pruneSelected, rankSkills, serializeSkillDraft } from "./skill-draft";
 import type { SkillDraft } from "./skill-draft";
+import { capImages, IMAGE_LIMIT, isImageFile, readImage, type ImageInput } from "./attachments";
+import { userMessageParts } from "../conversation/UserBubble";
 import css from "./Composer.module.css";
 
 const NO_THREAD_DRAFT = "";
@@ -71,6 +73,35 @@ export function Composer() {
 
   const [draft, setDraft] = useState<SkillDraft>(EMPTY_DRAFT);
   const text = draft.text;
+  const [images, setImages] = useState<ImageInput[]>([]);
+  const [imageNotice, setImageNotice] = useState("");
+  const [dropping, setDropping] = useState(false);
+  const imageDrafts = useRef(new Map<string, ImageInput[]>());
+  const imagesRef = useRef(images);
+  imagesRef.current = images;
+  const addImages = (added: ImageInput[]): void => {
+    setImages((current) => {
+      if (current.length + added.length > IMAGE_LIMIT) setImageNotice(t("composer.images.limit"));
+      return capImages(current, added);
+    });
+  };
+  const addFiles = async (files: File[]): Promise<void> => {
+    if (!connected || busy) return;
+    setImageNotice("");
+    const accepted = files.filter((file) => isImageFile(file.name, file.type));
+    if (accepted.length !== files.length) setImageNotice(t("composer.images.rejected"));
+    try { addImages(await Promise.all(accepted.slice(0, IMAGE_LIMIT + 1).map(readImage))); }
+    catch (error) { setImageNotice(t("composer.images.error", { message: String(error) })); }
+  };
+  const pickImages = async (): Promise<void> => {
+    setImageNotice("");
+    try {
+      const paths = await window.omo.pickImages();
+      const accepted = paths.filter((path) => isImageFile(path));
+      if (accepted.length !== paths.length) setImageNotice(t("composer.images.rejected"));
+      addImages(accepted.map((path) => ({ type: "localImage", path })));
+    } catch (error) { setImageNotice(t("composer.images.error", { message: String(error) })); }
+  };
   const [caret, setCaret] = useState(0);
   const [composing, setComposing] = useState(false);
   const [dismissedStart, setDismissedStart] = useState<number | null>(null);
@@ -91,6 +122,9 @@ export function Composer() {
 
   useLayoutEffect(() => {
     if (draftThread.current === activeThreadId) return;
+    imageDrafts.current.set(draftThread.current ?? NO_THREAD_DRAFT, imagesRef.current);
+    setImages(imageDrafts.current.get(activeThreadId ?? NO_THREAD_DRAFT) ?? []);
+    setImageNotice("");
     drafts.current.set(draftThread.current ?? NO_THREAD_DRAFT, draftRef.current);
     draftThread.current = activeThreadId;
     const next = drafts.current.get(activeThreadId ?? NO_THREAD_DRAFT) ?? EMPTY_DRAFT;
@@ -196,7 +230,7 @@ export function Composer() {
   }, [fit]);
 
   const blank = text.trim() === "";
-  const canSend = connected && !blank && !busy;
+  const canSend = connected && (!blank || images.length > 0) && !busy;
   const keyword = detectMagicKeyword(text);
   const segments = useMemo(() => segmentDraft(text), [text]);
   const syncMirrorScroll = (): void => {
@@ -224,9 +258,9 @@ export function Composer() {
 
   const submit = async (): Promise<void> => {
     const message = text.trim();
-    if (!canSend || message === "") return;
+    if (!canSend) return;
     const command = parseBtwCommand(message);
-    if (command !== null) {
+    if (command !== null && images.length === 0) {
       routeSideCommand(command.question);
       return;
     }
@@ -242,9 +276,12 @@ export function Composer() {
         drafts.current.delete(NO_THREAD_DRAFT);
       }
       setDraft(EMPTY_DRAFT);
+      setImages([]);
+      imageDrafts.current.delete(NO_THREAD_DRAFT);
       setDismissedStart(null);
-      const sent = await actions.sendMessage(transport);
+      const sent = await actions.sendMessage(transport, images);
       if (!sent) {
+        setImages((current) => capImages(images, current));
         setDraft((current) => (current.text === "" ? { text: message, selected: pruneSelected(message, selected) } : current));
         setCaret(message.length);
       }
@@ -301,10 +338,13 @@ export function Composer() {
     <div className={css.root}>
       <ConversationDock />
       <div
-        className={clsx(css.card, !connected && css.cardDisabled, keyword !== null && css.cardMagic)}
+        className={clsx(css.card, !connected && css.cardDisabled, keyword !== null && css.cardMagic, dropping && css.cardDrop)}
         data-testid={TESTID.composer}
         data-composer-card=""
         data-keyword={keyword?.keyword}
+        onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); setDropping(true); } }}
+        onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropping(false); }}
+        onDrop={(event) => { event.preventDefault(); setDropping(false); void addFiles(Array.from(event.dataTransfer.files)); }}
       >
         {menuOpen && (
           <SkillMenu
@@ -324,6 +364,14 @@ export function Composer() {
             onDismiss={dismissMenu}
           />
         )}
+        {dropping && <div className={css.imageNotice} role="status">{t("composer.images.drop")}</div>}
+        {images.length > 0 && <div className={css.images}>
+          {userMessageParts(images).images.map((image, index) => <div key={image.key} className={css.thumbnail} data-testid={TESTID.attachmentThumbnail}>
+            <img src={image.src} alt={t("composer.images.preview", { number: index + 1 })} />
+            <button type="button" className={css.removeImage} data-testid={TESTID.attachmentRemove} aria-label={t("composer.images.remove", { number: index + 1 })} onClick={() => setImages((current) => current.filter((_, position) => position !== index))}><IconCloseOutlineRegular size={14} /></button>
+          </div>)}
+        </div>}
+        {imageNotice !== "" && <div className={css.imageNotice} data-testid={TESTID.attachmentNotice} role="status">{imageNotice}</div>}
         <div className={css.scroll}>
           <div ref={mirrorRef} className={css.mirror} aria-hidden>
             {segments.map((segment, index) =>
@@ -364,6 +412,10 @@ export function Composer() {
               setComposing(false);
               setCaret(event.currentTarget.selectionStart);
             }}
+            onPaste={(event) => {
+              const files = Array.from(event.clipboardData.files);
+              if (files.length > 0) { event.preventDefault(); void addFiles(files); }
+            }}
             onKeyDown={onKeyDown}
             onScroll={syncMirrorScroll}
           />
@@ -376,6 +428,7 @@ export function Composer() {
         )}
         <div className={css.row}>
           <div className={css.tools}>
+            <button type="button" className={css.chip} data-testid={TESTID.attachmentPick} aria-label={t("composer.images.attach")} disabled={!connected || busy || images.length >= IMAGE_LIMIT} onClick={() => void pickImages()}><IconPaperclipOutlineRegular size={16} /></button>
             {connected && (
               <Tooltip label={t("composer.fullAccess.tooltip")} side="top" align="center" delayMs={300}>
                 <span className={css.statusChip} data-testid={TESTID.fullAccessChip} tabIndex={0}>

@@ -22,7 +22,7 @@ import { EmptyHero } from "./EmptyHero";
 import { QuestionCard } from "./QuestionCard";
 import { RenderBoundary } from "./RenderBoundary";
 import { TurnView } from "./TurnView";
-import { NO_IMAGES, UserBubble } from "./UserBubble";
+import { userMessageParts, UserBubble } from "./UserBubble";
 import { useStickToBottom } from "./use-stick-to-bottom";
 import css from "./ConversationPane.module.css";
 
@@ -142,7 +142,7 @@ function Transcript({ threadId, cwd, turnActive }: { threadId: string; cwd: stri
             ))}
           </MarkdownDelegateProvider>
           {conversation?.pendingUserMessages.map((message) => (
-            <UserBubble key={message.clientId} text={message.text} images={NO_IMAGES} sending />
+            <UserBubble key={message.clientId} text={message.text} images={userMessageParts(message.images ?? []).images} sending />
           ))}
           {showWorking && <WorkingIndicator />}
           {pending.map((request) => (

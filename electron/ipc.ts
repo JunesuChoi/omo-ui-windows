@@ -114,6 +114,21 @@ export function registerIpc(deps: IpcDeps): () => void {
       const picked = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
       return picked.canceled ? null : (picked.filePaths[0] ?? null);
     },
+    [IPC.pickImages]: async (): Promise<string[]> => {
+      const qa = process.env[ENV.qaPickImages];
+      if (qa) {
+        const paths: unknown = JSON.parse(qa);
+        if (!Array.isArray(paths) || !paths.every((entry) => typeof entry === "string" && path.isAbsolute(entry))) throw new Error("QA image paths must be an array of absolute paths");
+        return paths as string[];
+      }
+      const options: OpenDialogOptions = {
+        properties: ["openFile", "multiSelections"],
+        filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp"] }],
+      };
+      const window = getWindow();
+      const picked = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
+      return picked.canceled ? [] : picked.filePaths;
+    },
     [IPC.diagnostics]: (): Diagnostics => ({
       ...supervisor.diagnostics(),
       appVersion: app.getVersion(),

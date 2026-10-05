@@ -189,10 +189,10 @@ export function reduce(state: AppState, event: AppEvent): AppState {
         ),
       );
     case "user/messageSent": {
-      const { clientId, text, sentAtMs } = event;
+      const { clientId, text, images, sentAtMs } = event;
       const queued = updateConversation(state, event.threadId, (conversation) => ({
         ...conversation,
-        pendingUserMessages: [...conversation.pendingUserMessages, { clientId, text, sentAtMs }],
+        pendingUserMessages: [...conversation.pendingUserMessages, { clientId, text, ...(images === undefined ? {} : { images }), sentAtMs }],
       }));
       return fillEmptyPreview(queued, event.threadId, text);
     }

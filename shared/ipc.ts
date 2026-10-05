@@ -147,6 +147,8 @@ export interface OmoBridgeApi {
   loadHistory(sessionPath: string): Promise<HistoryResult>;
   /** Native folder picker; resolves null on cancel. The OMO_UI_QA_PICK_DIR variable short-circuits the dialog. */
   pickDirectory(defaultPath?: string | null): Promise<string | null>;
+  pickImages(): Promise<string[]>;
+  imageFilePath(file: File): string;
   getDiagnostics(): Promise<Diagnostics>;
   getPreferences(): Promise<Preferences>;
   setPreferences(patch: Partial<Preferences>): Promise<Preferences>;
@@ -174,6 +176,7 @@ export const IPC = {
   installLog: "omo:install-log",
   loadHistory: "history:load",
   pickDirectory: "dialog:pick-directory",
+  pickImages: "dialog:pick-images",
   diagnostics: "app:diagnostics",
   getPreferences: "prefs:get",
   setPreferences: "prefs:set",
@@ -195,6 +198,8 @@ export const ENV = {
   omoBin: "OMO_UI_OMO_BIN",
   /** Directory returned by pickDirectory without opening the native dialog (tests and QA). */
   qaPickDir: "OMO_UI_QA_PICK_DIR",
+  /** JSON array of image paths returned without a native dialog. */
+  qaPickImages: "OMO_UI_QA_PICK_IMAGES",
   /** Overrides Electron's userData directory (tests and QA). */
   userData: "OMO_UI_USER_DATA",
   /** Renderer dev-server URL loaded instead of dist/index.html. */

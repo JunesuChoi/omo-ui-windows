@@ -74,6 +74,54 @@
   }
 }
 
+.cardDrop {
+  border-color: var(--dsw-omo-accent-green);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 4px 16px;
+}
+
+.thumbnail {
+  position: relative;
+  width: 72px;
+  height: 72px;
+}
+
+.thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-sm);
+}
+
+.removeImage {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-specific-input-major);
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.imageNotice {
+  padding: 0 16px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+}
+
 .scroll {
   position: relative;
   margin-right: 4px;
