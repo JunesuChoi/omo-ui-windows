@@ -10,8 +10,14 @@ describe("detectMagicKeyword", () => {
     expect(detectMagicKeyword("line one\nulw")).toMatchObject({ keyword: "ulw", start: 9 });
   });
 
+  it("matches ulw-loop and the /ulw-loop command", () => {
+    expect(detectMagicKeyword("ulw-loop please")).toEqual({ keyword: "ulw-loop", text: "ulw-loop", start: 0, end: 8 });
+    expect(detectMagicKeyword("please /ulw-loop then stop")).toEqual({ keyword: "ulw-loop", text: "/ulw-loop", start: 7, end: 16 });
+    expect(detectMagicKeyword("/ULW-LOOP")).toMatchObject({ keyword: "ulw-loop", text: "/ULW-LOOP" });
+  });
+
   it("ignores the keyword inside other tokens", () => {
-    for (const text of ["ulw-loop please", "/ulw-loop", "ulwx", "xulw", "ulw/", "ulw_mode", "ultraworker", "my_ulw"]) {
+    for (const text of ["ulw-loopx", "x/ulw-loop", "mass-ulw", "ulwx", "xulw", "ulw/", "ulw_mode", "ultraworker", "my_ulw"]) {
       expect(detectMagicKeyword(text), text).toBeNull();
     }
   });
@@ -42,6 +48,7 @@ describe("segmentDraft", () => {
 
   it("returns one plain segment for text without keywords, including the empty draft", () => {
     expect(segmentDraft("")).toEqual([{ kind: "text", text: "" }]);
-    expect(segmentDraft("ulw-loop")).toEqual([{ kind: "text", text: "ulw-loop" }]);
+    expect(segmentDraft("mass-ulw")).toEqual([{ kind: "text", text: "mass-ulw" }]);
+    expect(segmentDraft("/ulw-loop go")).toEqual([{ kind: "keyword", text: "/ulw-loop" }, { kind: "text", text: " go" }]);
   });
 });

@@ -1,5 +1,5 @@
 /** omo magic keywords that switch the composer into its gradient state. */
-export const MAGIC_KEYWORDS = ["ulw", "ultrawork"] as const;
+export const MAGIC_KEYWORDS = ["ulw", "ultrawork", "ulw-loop"] as const;
 export type MagicKeyword = (typeof MAGIC_KEYWORDS)[number];
 
 export interface KeywordMatch {
@@ -10,8 +10,16 @@ export interface KeywordMatch {
   end: number;
 }
 
-/** A keyword counts only as a whole word: letters, digits, `_`, `-` and `/` on either side disqualify it (`ulw-loop`, `/ulw-loop`, `ulwx`, `xulw`). */
-const KEYWORD_PATTERN = /(^|[^\w\-/])(ulw|ultrawork)(?![\w\-/])/gi;
+/**
+ * A keyword counts only as a whole word: letters, digits, `_`, `-` and `/` on either side disqualify it (`ulwx`, `xulw`,
+ * `mass-ulw`). `ulw-loop` also matches as the `/ulw-loop` skill command, the slash included in the match.
+ */
+const KEYWORD_PATTERN = /(^|[^\w\-/])(\/?ulw-loop|ulw|ultrawork)(?![\w\-/])/gi;
+
+function keywordOf(word: string): MagicKeyword {
+  const lower = word.toLowerCase();
+  return lower === "ulw" ? "ulw" : lower === "ultrawork" ? "ultrawork" : "ulw-loop";
+}
 
 /** Every whole-word magic keyword in `text`, in order. */
 export function findMagicKeywords(text: string): KeywordMatch[] {
@@ -20,7 +28,7 @@ export function findMagicKeywords(text: string): KeywordMatch[] {
     const lead = match[1] ?? "";
     const word = match[2] ?? "";
     const start = match.index + lead.length;
-    matches.push({ keyword: word.toLowerCase() === "ulw" ? "ulw" : "ultrawork", text: word, start, end: start + word.length });
+    matches.push({ keyword: keywordOf(word), text: word, start, end: start + word.length });
   }
   return matches;
 }
