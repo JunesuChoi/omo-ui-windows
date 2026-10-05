@@ -4,6 +4,7 @@ import { SegmentedControl } from "@deepseek-ai/dsh-client-ui-primitives";
 import type { LocalePreference, Preferences, ThemePreference } from "../../../shared/ipc";
 import { useT } from "../../i18n";
 import { TESTID } from "../testids";
+import { revealThemePreference } from "../theme";
 import type { TestId } from "../testids";
 import { uiState, updatePreferences, useUiState } from "../ui-state";
 import { errorMessage } from "./diagnostics";
@@ -29,7 +30,7 @@ async function savePreferences(patch: Partial<Preferences>): Promise<void> {
   }
 }
 
-function ThemeChoice({ value, onChange }: { value: ThemePreference; onChange(next: ThemePreference): void }) {
+function ThemeChoice({ value, onChange }: { value: ThemePreference; onChange(next: ThemePreference, control: HTMLButtonElement): void }) {
   const t = useT();
   const indicator = {
     "--dsh-segment-count": String(THEMES.length),
@@ -45,8 +46,8 @@ function ThemeChoice({ value, onChange }: { value: ThemePreference; onChange(nex
           className={css.segment}
           data-testid={THEME_TESTID[option]}
           aria-pressed={option === value}
-          onClick={() => {
-            if (option !== value) onChange(option);
+          onClick={(event) => {
+            if (option !== value) onChange(option, event.currentTarget);
           }}
         >
           {t(`shell.settings.theme.${option}`)}
@@ -75,7 +76,7 @@ export function GeneralSection() {
       <SectionHeading title={t("shell.settings.nav.general")} intro={t("shell.settings.general.intro")} />
       <div className={css.card}>
         <SettingRow title={t("shell.settings.theme")} hint={t("shell.settings.theme.hint")}>
-          <ThemeChoice value={theme} onChange={(next) => save({ theme: next })} />
+          <ThemeChoice value={theme} onChange={(next, control) => revealThemePreference(next, control, () => save({ theme: next }))} />
         </SettingRow>
         <SettingRow title={t("shell.settings.language")} hint={t("shell.settings.language.hint")}>
           <div data-testid={TESTID.settingsLanguage}>
