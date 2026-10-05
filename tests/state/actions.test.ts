@@ -78,10 +78,12 @@ class FakeBridge implements OmoBridgeApi {
   started: (cwd: string) => unknown = (cwd) => ({
     thread: makeThread(THREAD_ID, { cwd }), model: "claude-fable-5", modelProvider: "anthropic", cwd, reasoningEffort: null,
   });
+  mcp: (params: ClientParams<"mcpServerStatus/list">) => unknown = () => ({ data: [], nextCursor: null });
   status = bridgeStatus("starting");
   preferences: Preferences = { theme: "system", locale: "system", lastWorkspace: null, recentWorkspaces: [], modelId: null };
   private readonly statusListeners = new Set<(status: BridgeStatus) => void>();
   private readonly handlers: Handlers = {
+    "mcpServerStatus/list": (params) => this.mcp(params) as ClientResult<"mcpServerStatus/list">,
     "thread/goal/get": () => this.goal(),
     "model/list": () => ({ data: [model], nextCursor: null }),
     // Results cross a process boundary; the overrides let tests return malformed payloads.
@@ -835,6 +837,66 @@ describe("side chats", () => {
     expect(state.activeThreadId).toBeNull();
     expect(state.conversations["side-0"]?.historyState).toBe("loaded");
     expect(state.btw.selected[THREAD_ID]).toBe("side-0");
+    disconnect();
+  });
+});
+
+describe("MCP inventory actions", () => {
+  it("follows pages using the active thread and records loading, timestamp and errors", async () => {
+    const store = createAppStore();
+    const bridge = new FakeBridge();
+    const actions = createActions(store, bridge, { now: () => 123 });
+    const server = { name: "one", serverInfo: null, tools: {}, resources: [], resourceTemplates: [], authStatus: "notLoggedIn" };
+    bridge.mcp = ({ cursor }) => ({ data: [{ ...server, name: cursor === undefined ? "one" : "two" }], nextCursor: cursor === undefined ? "next" : null });
+    store.dispatch({ type: "thread/activated", threadId: THREAD_ID });
+    const loading = actions.loadMcpServers();
+    expect(store.getState().mcp.loading).toBe(true);
+    await loading;
+    expect(store.getState().mcp).toMatchObject({ loading: false, error: null, loadedAt: 123 });
+    expect(store.getState().mcp.servers.map((entry) => entry.name)).toEqual(["one", "two"]);
+    expect(bridge.calls.filter((call) => call.method === "mcpServerStatus/list").map((call) => call.params)).toEqual([
+      { threadId: THREAD_ID, detail: "full" }, { threadId: THREAD_ID, detail: "full", cursor: "next" },
+    ]);
+    bridge.failing.add("mcpServerStatus/list");
+    await actions.loadMcpServers();
+    expect(store.getState().mcp.loading).toBe(false);
+    expect(store.getState().mcp.error).toContain("mcpServerStatus/list failed");
+  });
+
+  it("uses no thread when inactive and fences overlapping responses", async () => {
+    const store = createAppStore();
+    const bridge = new FakeBridge();
+    const actions = createActions(store, bridge);
+    let finish!: (value: unknown) => void;
+    bridge.mcp = () => new Promise((resolve) => { finish = resolve; });
+    const first = actions.loadMcpServers();
+    bridge.mcp = () => ({ data: [], nextCursor: null });
+    await actions.loadMcpServers();
+    finish({ data: null });
+    await first;
+    expect(store.getState().mcp.error).toBeNull();
+    expect(bridge.calls[0]?.params).toEqual({ detail: "full" });
+  });
+
+  it("refetches on any startup payload and reconnect only while open", async () => {
+    const store = createAppStore();
+    const bridge = new FakeBridge();
+    let reads = 0;
+    bridge.mcp = () => ({ data: [{ name: String(++reads), serverInfo: null, tools: {}, resources: [], resourceTemplates: [], authStatus: "unsupported" }], nextCursor: null });
+    const actions = createActions(store, bridge);
+    const disconnect = actions.connect();
+    actions.setMcpSectionOpen(true);
+    const notificationLoaded = waitForState(store, (state) => state.mcp.servers[0]?.name === "1");
+    bridge.emitNotification("mcpServer/startupStatus/updated", null);
+    await notificationLoaded;
+    const reconnectLoaded = waitForState(store, (state) => state.mcp.servers[0]?.name === "2");
+    bridge.emitStatus(bridgeStatus("connected"));
+    await reconnectLoaded;
+    actions.setMcpSectionOpen(false);
+    bridge.emitNotification("mcpServer/startupStatus/updated", {});
+    bridge.emitStatus(bridgeStatus("restarting"));
+    bridge.emitStatus(bridgeStatus("connected"));
+    expect(reads).toBe(2);
     disconnect();
   });
 });

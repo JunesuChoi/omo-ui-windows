@@ -162,6 +162,7 @@ export interface SkillCatalog {
 }
 
 export interface AppState {
+  mcp: { servers: import("./mcp").McpServer[]; loading: boolean; error: string | null; loadedAt: number | null };
   bridge: BridgeStatus | null;
   models: Model[];
   threads: Record<string, ThreadSummary>;
@@ -183,6 +184,7 @@ export interface AppState {
 }
 
 export type AppEvent =
+  | { type: "mcp/updated"; mcp: AppState["mcp"] }
   | { type: "bridge/status"; status: BridgeStatus }
   | { type: "rpc/notification"; notification: RpcNotification; receivedAtMs: number }
   | { type: "rpc/serverRequest"; request: RpcServerRequest; receivedAtMs: number }

@@ -92,6 +92,8 @@ function completeTurn(conversation: Conversation, notification: Extract<ServerNo
 
 export function applyNotification(state: AppState, notification: ServerNotification, receivedAtMs: number): AppState {
   switch (notification.method) {
+    case "mcpServer/startupStatus/updated":
+      return state; // Actions refetch the inventory; the unconfirmed payload is not state.
     case "thread/goal/updated":
     case "thread/goal/cleared": {
       const { threadId } = notification.params;

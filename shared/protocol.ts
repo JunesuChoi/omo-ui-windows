@@ -293,7 +293,29 @@ export interface SkillsListResponse {
   data: SkillsListEntry[];
 }
 
+export interface McpTool {
+  name: string;
+  title?: string;
+  description?: string;
+  inputSchema?: unknown;
+  annotations?: unknown;
+}
+
+export interface McpServerStatus {
+  name: string;
+  serverInfo: { name: string; title?: string; version: string; description?: string; icons?: unknown[]; websiteUrl?: string } | null;
+  tools: Record<string, McpTool>;
+  resources: unknown[];
+  resourceTemplates: unknown[];
+  authStatus: string;
+  status?: string;
+}
+
 export interface ClientRequestMap {
+  "mcpServerStatus/list": {
+    params: { threadId?: string; detail?: string; cursor?: string | null; limit?: number };
+    result: { data: McpServerStatus[]; nextCursor: string | null };
+  };
   "thread/goal/get": { params: { threadId: string }; result: { goal: WireGoal | null } };
   extension_request: { params: { threadId: string; name: string; data?: unknown }; result: unknown };
   initialize: {
@@ -345,6 +367,7 @@ export type ClientResult<M extends ClientMethod> = ClientRequestMap[M]["result"]
 
 /** Methods the renderer may call through the bridge; the main process rejects anything else. */
 export const CLIENT_METHODS = [
+  "mcpServerStatus/list",
   "thread/goal/get",
   "extension_request",
   "initialize",
@@ -363,6 +386,7 @@ export const CLIENT_METHODS = [
 ] as const satisfies readonly ClientMethod[];
 
 export interface ServerNotificationMap {
+  "mcpServer/startupStatus/updated": unknown;
   "thread/goal/updated": { threadId: string; turnId: string | null; goal: WireGoal };
   "thread/goal/cleared": { threadId: string };
   "skills/changed": Record<string, never>;

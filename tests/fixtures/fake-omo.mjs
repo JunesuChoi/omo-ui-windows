@@ -967,6 +967,8 @@ function waitForFile(file, done) {
   timers.add(timer);
 }
 
+let mcpVersion = "1.0.0";
+
 function handleRequest(id, method, params) {
   if (method === "initialize") {
     if (initialized) throw new RpcFailure(SERVER_ERROR, "Already initialized");
@@ -990,6 +992,17 @@ function handleRequest(id, method, params) {
       respond(id, {});
       return;
     }
+    case "mcpServerStatus/list":
+      respond(id, { data: process.env.FAKE_OMO_MCP_EMPTY === "1" ? [] : [
+        { name: "demo-tools", serverInfo: { name: "demo-tools", version: mcpVersion },
+          tools: {
+            search: { name: "search", description: "Search the demo knowledge base." },
+            read_document: { name: "read_document", description: "Read a demo document by ID." },
+            list_projects: { name: "list_projects", description: "List available demo projects." },
+          }, resources: [], resourceTemplates: [], authStatus: "unsupported" },
+        { name: "pganalyze", serverInfo: null, tools: {}, resources: [], resourceTemplates: [], authStatus: "notLoggedIn" },
+      ], nextCursor: null });
+      return;
     case "model/list":
       respond(id, { data: MODELS, nextCursor: null });
       return;
@@ -1005,6 +1018,8 @@ function handleRequest(id, method, params) {
       recordEntry(record, { type: "model_change", provider: "fake", modelId: "alpha" });
       notify("thread/started", { thread: threadView(record, false) });
       respond(id, sessionResult(record));
+      mcpVersion = "1.1.0";
+      notify("mcpServer/startupStatus/updated", { threadId: thread.id, name: "demo-tools", status: "connected" });
       return;
     }
     case "thread/resume": {

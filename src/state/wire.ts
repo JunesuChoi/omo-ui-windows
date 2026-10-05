@@ -178,6 +178,7 @@ function deltaFields(params: JsonObject): DeltaFields | null {
 /** Narrows a notification to the handled subset; unknown methods and malformed params return null. */
 export function parseNotification(notification: RpcNotification): ServerNotification | null {
   const params = notification.params;
+  if (notification.method === "mcpServer/startupStatus/updated") return { method: notification.method, params };
   if (!isObject(params)) return null;
   const { threadId, turnId } = params;
   switch (notification.method) {
