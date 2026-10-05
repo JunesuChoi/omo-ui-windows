@@ -6,6 +6,7 @@ import { TESTID } from "../testids";
 import a11y from "./a11y.module.css";
 import css from "./UserBubble.module.css";
 import { projectSkillUserText } from "./skill-text";
+import { splitAttachments } from "../composer/attachments";
 
 export interface UserImage {
   key: string;
@@ -18,16 +19,22 @@ function fileUrl(path: string): string {
   return `file://${path.split("/").map(encodeURIComponent).join("/")}`;
 }
 
-/** Joins the text inputs of a user message and collects its image inputs; skills and mentions are not shown. */
+/**
+ * Joins the text inputs of a user message and collects its images: image inputs and the paths of a trailing
+ * attachment block (see `splitAttachments`); skills and mentions are not shown.
+ */
 export function userMessageParts(content: readonly UserInput[]): { text: string; images: readonly UserImage[] } {
   const texts: string[] = [];
   const images: UserImage[] = [];
   content.forEach((input, index) => {
-    if (input.type === "text") texts.push(input.text);
-    else if (input.type === "image") images.push({ key: `image:${index}`, src: input.url });
+    if (input.type === "text") {
+      const { text, paths } = splitAttachments(input.text);
+      texts.push(text);
+      paths.forEach((path, position) => images.push({ key: `attachment:${index}:${position}`, src: fileUrl(path) }));
+    } else if (input.type === "image") images.push({ key: `image:${index}`, src: input.url });
     else if (input.type === "localImage") images.push({ key: `image:${index}`, src: fileUrl(input.path) });
   });
-  return { text: texts.join("\n"), images: images.length === 0 ? NO_IMAGES : images };
+  return { text: texts.filter((text) => text !== "").join("\n"), images: images.length === 0 ? NO_IMAGES : images };
 }
 
 function Thumbnail({ src }: { src: string }) {

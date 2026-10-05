@@ -1,4 +1,5 @@
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { ATTACHMENT_HEADER } from "../src/ui/composer/attachments.ts";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
 import { ENV } from "../shared/ipc.ts";
@@ -21,7 +22,9 @@ test("picker sends local images and echoes user thumbnails", async () => {
     await byTestId(page, TESTID.composerInput).fill("Describe this image");
     await byTestId(page, TESTID.composerSend).click();
     await expect(byTestId(page, TESTID.userMessage).locator("img")).toBeVisible();
-    expect(readFakeLog()).toContainEqual(expect.objectContaining({ method: "turn/start", params: expect.objectContaining({ input: [{ type: "text", text: "Describe this image", text_elements: [] }, { type: "localImage", path: image }] }) }));
+    await expect(byTestId(page, TESTID.userMessage)).toContainText("Describe this image");
+    await expect(byTestId(page, TESTID.userMessage)).not.toContainText("Attached images");
+    expect(readFakeLog()).toContainEqual(expect.objectContaining({ method: "turn/start", params: expect.objectContaining({ input: [{ type: "text", text: `Describe this image\n\n${ATTACHMENT_HEADER}\n- ${image}`, text_elements: [] }] }) }));
   } finally { await launched.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -50,7 +53,11 @@ test("paste and drop preview, remove, and send image-only", async () => {
     await byTestId(page, TESTID.composerSend).click();
     await expect(byTestId(page, TESTID.userMessage).locator("img")).toBeVisible();
     const request = readFakeLog().find((entry) => entry["method"] === "turn/start");
-    expect(request).toMatchObject({ params: { input: [{ type: "image", url: expect.stringMatching(/^data:image\/png;base64,/) }] } });
+    expect(request).toMatchObject({ params: { input: [{ type: "text", text: expect.stringMatching(new RegExp(`^${ATTACHMENT_HEADER.replace(/[()]/g, "\\$&")}\\n- /.+/attachments/[0-9a-f-]+\\.png$`)) }] } });
+    const saved = String((request?.["params"] as { input: { text: string }[] }).input[0]?.text).split("\n- ")[1] ?? "";
+    expect(readFileSync(saved).equals(Buffer.from(PNG, "base64"))).toBe(true);
+    await expect(byTestId(page, TESTID.userMessage).locator("img")).toHaveJSProperty("complete", true);
+    expect(await byTestId(page, TESTID.userMessage).locator("img").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1);
     await expect(byTestId(page, TESTID.attachmentThumbnail)).toHaveCount(0);
   } finally { await launched.close(); }
 });

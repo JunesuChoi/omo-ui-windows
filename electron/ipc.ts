@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { readFile, realpath } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { app, clipboard, dialog, ipcMain, shell } from "electron";
@@ -35,6 +36,7 @@ const defaultOpenWorkspace = (): OpenWorkspace =>
 
 const INTERNAL_ERROR = -32603;
 const INVALID_REQUEST = -32600;
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 
 function isClientMethod(value: unknown): value is ClientMethod {
   return CLIENT_METHODS.some((method) => method === value);
@@ -128,6 +130,17 @@ export function registerIpc(deps: IpcDeps): () => void {
       const window = getWindow();
       const picked = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
       return picked.canceled ? [] : picked.filePaths;
+    },
+    [IPC.saveImage]: async (_event, dataUrl): Promise<string> => {
+      const match = /^data:image\/(png|jpeg|gif|webp);base64,([A-Za-z0-9+/]+=*)$/.exec(requireString(dataUrl, "dataUrl"));
+      if (match === null) throw new Error("dataUrl must be a base64 PNG, JPEG, GIF or WebP data URL");
+      const bytes = Buffer.from(match[2] ?? "", "base64");
+      if (bytes.length > MAX_ATTACHMENT_BYTES) throw new Error("image is larger than 20 MB");
+      const dir = path.join(app.getPath("userData"), "attachments");
+      await mkdir(dir, { recursive: true });
+      const target = path.join(dir, `${randomUUID()}.${match[1] === "jpeg" ? "jpg" : match[1]}`);
+      await writeFile(target, bytes);
+      return target;
     },
     [IPC.diagnostics]: (): Diagnostics => ({
       ...supervisor.diagnostics(),

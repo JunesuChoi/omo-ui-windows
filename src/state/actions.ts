@@ -216,11 +216,18 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
 
   /** Sends to a thread: steers its running turn, otherwise resumes the thread when needed and starts a turn. */
   const deliver = async (threadId: string, text: string, announceSteer: boolean, images: readonly ImageInput[] = []): Promise<boolean> => {
+    let imagePaths: string[];
+    try {
+      imagePaths = await Promise.all(images.map((image) => (image.type === "localImage" ? image.path : bridge.saveImage(image.url))));
+    } catch (error) {
+      fail(error, threadId);
+      return false;
+    }
     const conversation = store.getState().conversations[threadId];
     const activeTurnId = conversation?.activeTurnId ?? null;
     if (activeTurnId !== null) {
       try {
-        await bridge.request("turn/steer", { threadId, expectedTurnId: activeTurnId, input: messageInput(text, images) });
+        await bridge.request("turn/steer", { threadId, expectedTurnId: activeTurnId, input: messageInput(text, imagePaths) });
         if (announceSteer) notify("info", "Message sent to the running turn.", threadId, "steered");
         return true;
       } catch (error) {
@@ -243,7 +250,7 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
       const { modelId, effort } = store.getState().composer;
       await bridge.request("turn/start", {
         threadId,
-        input: messageInput(text, images),
+        input: messageInput(text, imagePaths),
         clientUserMessageId: clientId,
         ...(modelId === null ? {} : { model: modelId }),
         ...(effort === null ? {} : { effort }),

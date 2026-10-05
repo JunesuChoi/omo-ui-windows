@@ -924,8 +924,10 @@ function startTurn(id, params) {
     throw new RpcFailure(INVALID_REQUEST, `Thread already has an active turn: ${record.thread.id}`);
   }
   const input = Array.isArray(params.input) ? params.input : [];
-  if (input.some((item) => isRecord(item) && item.type === "skill")) {
-    throw new RpcFailure(INVALID_PARAMS, "Invalid params: unsupported input item type skill");
+  // omo 5.1.4's app-server rejects these input item types; attachments must travel as paths in the text.
+  const unsupported = input.find((item) => isRecord(item) && ["skill", "image", "localImage", "mention"].includes(String(item.type)));
+  if (unsupported !== undefined) {
+    throw new RpcFailure(INVALID_PARAMS, `Invalid params: unsupported input item type ${unsupported.type}`);
   }
   const clientId = typeof params.clientUserMessageId === "string" ? params.clientUserMessageId : null;
   const turn = createTurn(record.thread.id);
@@ -942,6 +944,10 @@ function steerTurn(id, params) {
     throw new RpcFailure(INVALID_REQUEST, `No active turn for thread ${threadId}`);
   }
   const input = Array.isArray(params.input) ? params.input : [];
+  const unsupported = input.find((item) => isRecord(item) && ["skill", "image", "localImage", "mention"].includes(String(item.type)));
+  if (unsupported !== undefined) {
+    throw new RpcFailure(INVALID_PARAMS, `Invalid params: unsupported input item type ${unsupported.type}`);
+  }
   respond(id, { turnId: turn.wire.id });
   const item = { type: "userMessage", id: nextItemId(turn), clientId: null, content: input };
   startItem(turn, item);

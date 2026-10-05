@@ -152,6 +152,8 @@ export interface OmoBridgeApi {
   pickDirectory(defaultPath?: string | null): Promise<string | null>;
   pickImages(): Promise<string[]>;
   imageFilePath(file: File): string;
+  /** Writes a PNG/JPEG/GIF/WebP data URL under userData/attachments and resolves its absolute path. */
+  saveImage(dataUrl: string): Promise<string>;
   getDiagnostics(): Promise<Diagnostics>;
   getPreferences(): Promise<Preferences>;
   setPreferences(patch: Partial<Preferences>): Promise<Preferences>;
@@ -180,6 +182,7 @@ export const IPC = {
   loadHistory: "history:load",
   pickDirectory: "dialog:pick-directory",
   pickImages: "dialog:pick-images",
+  saveImage: "attachments:save-image",
   diagnostics: "app:diagnostics",
   getPreferences: "prefs:get",
   setPreferences: "prefs:set",
