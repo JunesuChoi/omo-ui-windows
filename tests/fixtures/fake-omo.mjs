@@ -855,8 +855,12 @@ async function runTurn(record, turn, input, clientId) {
   record.thread.updatedAt = nowSec();
   record.thread.status = { type: "idle" };
   record.activeTurn = null;
-  notify("turn/completed", { threadId, turn: turn.wire });
-  notify("thread/status/changed", { threadId, status: { type: "idle" } });
+  // SCENARIO:lost-completion ends the turn like omo does when its turn/completed never reaches this client: only the
+  // broadcast thread/status/changed to idle arrives. SCENARIO:silent-end sends neither, so the client still believes
+  // the turn runs and its next steer is rejected.
+  const silent = text.includes("SCENARIO:silent-end");
+  if (!silent && !text.includes("SCENARIO:lost-completion")) notify("turn/completed", { threadId, turn: turn.wire });
+  if (!silent) notify("thread/status/changed", { threadId, status: { type: "idle" } });
 }
 
 // ---- request handlers ---------------------------------------------------------------------

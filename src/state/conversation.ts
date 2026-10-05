@@ -1,4 +1,4 @@
-import type { Thread, ThreadItem, Turn, UserMessageItem } from "../../shared/protocol";
+import type { Thread, ThreadItem, Turn, TurnStatus, UserMessageItem } from "../../shared/protocol";
 import type { AppState, Conversation, ConversationItem, ConversationTurn, ThreadSummary } from "./types";
 import { parseItem } from "./wire";
 import { emptyLiveState } from "./live";
@@ -131,6 +131,19 @@ export function appendAt(parts: string[], index: number, delta: string): string[
   while (copy.length <= index) copy.push("");
   copy[index] = (copy[index] ?? "") + delta;
   return copy;
+}
+
+/**
+ * Ends every turn still marked inProgress with `status` and clears `activeTurnId`. Used when omo reports the thread is no
+ * longer active but this client never received the turn's turn/completed (omo sends that only to subscribed connections,
+ * while thread/status/changed is broadcast). A later turn/completed still overwrites the status it reports.
+ */
+export function settleActiveTurn(conversation: Conversation, status: Exclude<TurnStatus, "inProgress">, completedAtMs: number): Conversation {
+  if (conversation.activeTurnId === null && !conversation.turns.some((turn) => turn.status === "inProgress")) return conversation;
+  const turns = conversation.turns.map((turn): ConversationTurn =>
+    turn.status === "inProgress" ? { ...turn, status, completedAtMs: turn.completedAtMs ?? completedAtMs, items: stopStreaming(turn.items) } : turn,
+  );
+  return { ...conversation, turns, activeTurnId: null };
 }
 
 export function stopStreaming(items: ConversationItem[]): ConversationItem[] {

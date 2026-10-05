@@ -1,6 +1,7 @@
 import type { BridgeStatus, HistoryTurn } from "../../shared/ipc";
 import {
   emptyConversation,
+  settleActiveTurn,
   stopStreaming,
   toSummary,
   updateConversation,
@@ -187,6 +188,10 @@ export function reduce(state: AppState, event: AppEvent): AppState {
         updateTurn(conversation, event.turn.id, (turn) =>
           turn === event.turn ? { ...turn, error: event.error } : turn,
         ),
+      );
+    case "turn/settled":
+      return updateExistingConversation(state, event.threadId, (conversation) =>
+        settleActiveTurn(conversation, event.status, event.settledAtMs),
       );
     case "user/messageSent": {
       const { clientId, text, sentAtMs } = event;

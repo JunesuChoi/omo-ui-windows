@@ -4,11 +4,13 @@ import {
   ensureTurn,
   findItem,
   fromWireTurn,
+  settleActiveTurn,
   settlePendingMessage,
   stopStreaming,
   toMs,
   toSummary,
   updateConversation,
+  updateExistingConversation,
   updateItem,
   updateTurn,
   upsertItem,
@@ -108,7 +110,10 @@ export function applyNotification(state: AppState, notification: ServerNotificat
     }
     case "thread/status/changed": {
       const { threadId, status } = notification.params;
-      return updateThread(state, threadId, (summary) => ({ ...summary, status }));
+      const listed = updateThread(state, threadId, (summary) => ({ ...summary, status }));
+      return status.type === "active"
+        ? listed
+        : updateExistingConversation(listed, threadId, (conversation) => settleActiveTurn(conversation, "completed", receivedAtMs));
     }
     case "thread/name/updated": {
       const { threadId, threadName } = notification.params;

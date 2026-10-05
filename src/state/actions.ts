@@ -224,8 +224,10 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
         if (announceSteer) notify("info", "Message sent to the running turn.", threadId, "steered");
         return true;
       } catch (error) {
-        fail(error, threadId);
-        return false;
+        // omo rejects a steer when the turn it names is no longer running there; the turn ended without this client
+        // seeing turn/completed. Settle it locally and send the message as a new turn instead.
+        console.warn("turn/steer rejected; starting a new turn", error);
+        store.dispatch({ type: "turn/settled", threadId, status: "completed", settledAtMs: now() });
       }
     }
     const clientId = newId();
@@ -461,9 +463,12 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
       const threadId = state.activeThreadId;
       const turnId = threadId === null ? null : (state.conversations[threadId]?.activeTurnId ?? null);
       if (threadId === null || turnId === null) return;
-      await guarded(async () => {
+      try {
         await bridge.request("turn/interrupt", { threadId, turnId });
-      }, threadId);
+      } catch (error) {
+        console.warn("turn/interrupt rejected; ending the turn locally", error);
+        store.dispatch({ type: "turn/settled", threadId, status: "interrupted", settledAtMs: now() });
+      }
     },
 
     renameThread: (threadId, name) =>
