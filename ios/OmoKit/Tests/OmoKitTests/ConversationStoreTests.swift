@@ -26,6 +26,15 @@ final class ConversationStoreTests: XCTestCase {
         XCTAssertEqual(s.threads["t"]?.turns.first?.items.first?.text, "Hello world!")
         XCTAssertEqual(s.threads["t"]?.turns.first?.items.count, 1)
     }
+    func testCompletedItemWithEmptyTextPreservesThreeDeltas() {
+        var s = initial()
+        s.apply(method: "turn/started", params: turn())
+        s.apply(method: "item/agentMessage/delta", params: delta("one"))
+        s.apply(method: "item/agentMessage/delta", params: delta("two"))
+        s.apply(method: "item/agentMessage/delta", params: delta("three"))
+        s.apply(method: "item/completed", params: item(text: ""))
+        XCTAssertEqual(s.threads["t"]?.turns.first?.items.first?.text, "onetwothree")
+    }
     func testDeltaBeforeItemStartedIsPreserved() {
         var s = initial()
         s.apply(method: "item/agentMessage/delta", params: delta("early"))
@@ -51,6 +60,13 @@ final class ConversationStoreTests: XCTestCase {
         XCTAssertEqual(s.threads["t"]?.turns.first?.status, "interrupted")
         XCTAssertEqual(s.threads["t"]?.turns.first?.items.first?.text, "done")
         XCTAssertEqual(s.threads["t"]?.turns.first?.items.first?.status, "completed")
+    }
+    func testInterruptSettlesActiveTurnAsInterrupted() {
+        var s = initial()
+        s.apply(method: "turn/started", params: turn())
+        s.interrupt(threadID: "t")
+        XCTAssertNil(s.threads["t"]?.activeTurnID)
+        XCTAssertEqual(s.threads["t"]?.turns.first?.status, "interrupted")
     }
     func testSteerVersusStartTextOnly() {
         var s = initial()

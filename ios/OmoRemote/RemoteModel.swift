@@ -135,6 +135,9 @@ import OmoKit
     func interrupt(_ id: String) async {
         guard ready, let turn = store.threads[id]?.activeTurnID else { return }
         do { _ = try await rpc.call("turn/interrupt", params: .object(["threadId": .string(id), "turnId": .string(turn)])) }
-        catch { errorMessage = error.localizedDescription }
+        catch {
+            store.interrupt(threadID: id)
+            errorMessage = error.localizedDescription
+        }
     }
 }

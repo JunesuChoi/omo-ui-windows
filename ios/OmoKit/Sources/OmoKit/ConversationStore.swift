@@ -118,6 +118,14 @@ public struct ConversationStore: Sendable {
     public mutating func disconnect() {
         for id in Array(threads.keys) { settle(id); threads[id]?.status = "notLoaded"; threads[id]?.activeFlags = [] }
     }
+    public mutating func interrupt(threadID: String) {
+        guard var thread = threads[threadID], let index = thread.turns.lastIndex(where: { $0.status == "inProgress" }) else { return }
+        thread.turns[index].status = "interrupted"
+        for item in thread.turns[index].items.indices where thread.turns[index].items[item].status == "inProgress" {
+            thread.turns[index].items[item].status = "completed"
+        }
+        threads[threadID] = thread
+    }
     private mutating func settle(_ id: String) {
         guard var thread = threads[id] else { return }
         for index in thread.turns.indices {
@@ -170,8 +178,10 @@ public struct ConversationStore: Sendable {
             if method == "item/started" { item.status = "inProgress" }
             else if item.status == "inProgress" { item.status = "completed" }
             if let itemIndex = thread.turns[index].items.firstIndex(where: { $0.id == item.id }) {
-                // Late item/started frames with empty text must not discard deltas.
-                if method == "item/started", item.type == "agentMessage", item.text.isEmpty { item.text = thread.turns[index].items[itemIndex].text }
+                // Item snapshots can lag streamed deltas; retain the longer agent text.
+                if item.type == "agentMessage", thread.turns[index].items[itemIndex].text.count > item.text.count {
+                    item.text = thread.turns[index].items[itemIndex].text
+                }
                 thread.turns[index].items[itemIndex] = item
             } else { thread.turns[index].items.append(item) }
             threads[id] = thread
