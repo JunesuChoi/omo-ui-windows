@@ -8,6 +8,9 @@ import OmoKit
     @Published var errorMessage: String?
     @Published var busyThreads: Set<String> = []
     @Published var refreshing = false
+    /// The model/list failure, shown by the model picker; sending continues without a model.
+    @Published var modelsError: String?
+    @Published var skillsError: String?
     private let transport = USBListener()
     private lazy var rpc = RPCClient(transport: transport)
     private var generation = 0
@@ -56,6 +59,7 @@ import OmoKit
                 rpc.disconnect(); store.disconnect()
             }
         case let .notification(method, params): store.apply(method: method, params: params)
+        case let .serverRequest(id, method, params): store.receiveServerRequest(id: id, method: method, params: params)
         default: break
         }
     }
@@ -65,6 +69,7 @@ import OmoKit
         refreshTask = Task { [weak self] in
             guard let self, self.generation == epoch else { return }
             await self.refresh()
+            await self.loadModels()
             if self.generation == epoch { self.refreshTask = nil }
         }
     }
@@ -96,6 +101,64 @@ import OmoKit
             guard epoch == generation else { return }
             store.load(read["thread"])
         } catch { if epoch == generation { errorMessage = error.localizedDescription } }
+        if epoch == generation, let cwd = store.threads[id]?.cwd { await loadSkills(cwd: cwd) }
+    }
+    func loadModels() async {
+        guard ready else { return }
+        let epoch = generation
+        do {
+            let result = try await rpc.call("model/list")
+            guard epoch == generation else { return }
+            store.setModels(result); modelsError = nil
+        } catch { if epoch == generation { modelsError = error.localizedDescription } }
+    }
+    func loadSkills(cwd: String) async {
+        guard ready else { return }
+        let epoch = generation
+        do {
+            let result = try await rpc.call("skills/list", params: .object(["cwds": .array([.string(cwd)])]))
+            guard epoch == generation else { return }
+            store.setSkills(result, cwd: cwd); skillsError = nil
+        } catch { if epoch == generation { skillsError = error.localizedDescription } }
+    }
+    func select(model: String?, effort: String?) { store.select(model: model, effort: effort) }
+    /// Sends the serverAnswer for a pending request once; a second answer for the same id does nothing.
+    func answer(requestID: JSONValue, result: JSONValue) async {
+        guard ready, let request = store.resolveServerRequest(requestID) else { return }
+        do { try await transport.send(.serverAnswer(id: requestID, result: result)) }
+        catch {
+            // The bridge never received it; restore the request so the user can answer again.
+            store.receiveServerRequest(id: request.requestID, method: request.method, params: request.params)
+            errorMessage = error.localizedDescription
+        }
+    }
+    /// Renames optimistically; a rejected rename restores the previous name.
+    @discardableResult func rename(threadID: String, name: String) async -> Bool {
+        guard ready, let thread = store.threads[threadID] else { return false }
+        let previous = thread.name
+        let epoch = generation
+        store.rename(threadID: threadID, name: name)
+        do {
+            _ = try await rpc.call("thread/name/set", params: .object(["threadId": .string(threadID), "name": .string(name)]))
+            return true
+        } catch {
+            if store.threads[threadID]?.name == name { store.rename(threadID: threadID, name: previous) }
+            if epoch == generation { errorMessage = error.localizedDescription }
+            return false
+        }
+    }
+    /// Removes the thread only after the Mac confirms; a rejected delete keeps it.
+    @discardableResult func delete(threadID: String) async -> Bool {
+        guard ready, store.threads[threadID] != nil else { return false }
+        let epoch = generation
+        do {
+            _ = try await rpc.call("thread/delete", params: .object(["threadId": .string(threadID)]))
+            store.remove(threadID: threadID)
+            return true
+        } catch {
+            if epoch == generation { errorMessage = error.localizedDescription }
+            return false
+        }
     }
     func create(cwd: String) async -> String? {
         guard ready else { return nil }

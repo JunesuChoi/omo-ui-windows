@@ -71,10 +71,149 @@ public struct TurnRequest: Equatable {
     public let params: JSONValue
 }
 
+/// A server-to-client request (approval or question) awaiting a serverAnswer frame.
+public struct PendingServerRequest: Identifiable, Equatable, Sendable {
+    public let requestID: JSONValue
+    public let method: String
+    public let params: JSONValue
+    public var threadID: String? { params["threadId"].string }
+    /// Stable text form of `requestID`; string and number ids never collide.
+    public var id: String { Self.key(requestID) }
+    public init(requestID: JSONValue, method: String, params: JSONValue) {
+        self.requestID = requestID; self.method = method; self.params = params
+    }
+    static func key(_ id: JSONValue) -> String {
+        if let text = id.string { return "s:" + text }
+        return "n:" + String(id.number ?? .nan)
+    }
+}
+
+/// The goal from thread/goal/updated (WireGoal in shared/protocol.ts).
+public struct ThreadGoal: Equatable, Sendable {
+    public var objective: String
+    public var status: String
+    public var tokenBudget: Double?
+    public var tokensUsed: Double
+    public var timeUsedSeconds: Double
+    public var updatedAt: Double
+    public init?(_ json: JSONValue) {
+        guard let objective = json["objective"].string, let status = json["status"].string else { return nil }
+        self.objective = objective; self.status = status
+        tokenBudget = json["tokenBudget"].number
+        tokensUsed = json["tokensUsed"].number ?? 0
+        timeUsedSeconds = json["timeUsedSeconds"].number ?? 0
+        updatedAt = json["updatedAt"].number ?? 0
+    }
+}
+
+public struct TodoTask: Equatable, Sendable {
+    public var content: String
+    public var status: String
+}
+
+public struct TodoPhase: Equatable, Sendable {
+    public var name: String
+    public var tasks: [TodoTask]
+    public init?(_ json: JSONValue) {
+        guard let name = json["name"].string else { return nil }
+        self.name = name
+        tasks = json["tasks"].array.compactMap { task in
+            guard let content = task["content"].string, let status = task["status"].string else { return nil }
+            return TodoTask(content: content, status: status)
+        }
+    }
+}
+
+/// One model/list entry.
+public struct ModelOption: Identifiable, Equatable, Sendable {
+    public let id: String
+    public let displayName: String
+    public let efforts: [String]
+    public let defaultEffort: String?
+    public let hidden: Bool
+    public init?(_ json: JSONValue) {
+        guard let id = json["id"].string else { return nil }
+        self.id = id
+        displayName = json["displayName"].string ?? id
+        efforts = json["supportedReasoningEfforts"].array.compactMap { $0["reasoningEffort"].string }
+        defaultEffort = json["defaultReasoningEffort"].string
+        if case .bool(let value) = json["hidden"] { hidden = value } else { hidden = false }
+    }
+}
+
+/// One skills/list skill.
+public struct SkillOption: Identifiable, Equatable, Sendable {
+    public var id: String { name }
+    public let name: String
+    public let description: String
+    public let path: String
+    public let enabled: Bool
+    public init?(_ json: JSONValue) {
+        guard let name = json["name"].string else { return nil }
+        self.name = name
+        description = json["shortDescription"].string ?? json["description"].string ?? ""
+        path = json["path"].string ?? ""
+        if case .bool(let value) = json["enabled"] { enabled = value } else { enabled = true }
+    }
+}
+
 public struct ConversationStore: Sendable {
     public private(set) var threads: [String: ConversationThread] = [:]
     private var seenUserItems: [String: Set<String>] = [:]
+    /// Pending server requests keyed by thread id, in arrival order.
+    public private(set) var serverRequests: [String: [PendingServerRequest]] = [:]
+    public private(set) var goals: [String: ThreadGoal] = [:]
+    /// Present only once a todo notification arrived for the thread.
+    public private(set) var todos: [String: [TodoPhase]] = [:]
+    public private(set) var models: [ModelOption] = []
+    /// skills/list entries keyed by workspace cwd.
+    public private(set) var skillCatalogue: [String: [SkillOption]] = [:]
+    public private(set) var selectedModel: String?
+    public private(set) var selectedEffort: String?
+    public private(set) var selectedSkills: [String] = []
     public init() {}
+    public func requests(threadID: String) -> [PendingServerRequest] { serverRequests[threadID] ?? [] }
+    public func skills(cwd: String) -> [SkillOption] { skillCatalogue[cwd] ?? [] }
+    public mutating func receiveServerRequest(id: JSONValue, method: String, params: JSONValue) {
+        let request = PendingServerRequest(requestID: id, method: method, params: params)
+        guard let threadID = request.threadID else { return }
+        // The bridge replays unanswered requests on reconnect; keep one copy.
+        guard !serverRequests[threadID, default: []].contains(where: { $0.id == request.id }) else { return }
+        serverRequests[threadID, default: []].append(request)
+    }
+    /// Removes the request with `requestID` and returns it, or nil when it was not pending.
+    @discardableResult public mutating func resolveServerRequest(_ requestID: JSONValue) -> PendingServerRequest? {
+        let key = PendingServerRequest.key(requestID)
+        for (threadID, list) in serverRequests {
+            guard let index = list.firstIndex(where: { $0.id == key }) else { continue }
+            let request = list[index]
+            serverRequests[threadID]?.remove(at: index)
+            if serverRequests[threadID]?.isEmpty == true { serverRequests[threadID] = nil }
+            return request
+        }
+        return nil
+    }
+    /// Replaces the model catalogue from a model/list result; drops a selection the catalogue no longer offers.
+    public mutating func setModels(_ result: JSONValue) {
+        models = result["data"].array.compactMap(ModelOption.init)
+        if let selected = selectedModel, !models.contains(where: { $0.id == selected }) { selectedModel = nil; selectedEffort = nil }
+    }
+    /// Replaces the skill catalogue for `cwd` from a skills/list result.
+    public mutating func setSkills(_ result: JSONValue, cwd: String) {
+        let entry = result["data"].array.first { $0["cwd"].string == cwd } ?? result["data"].array.first ?? .null
+        skillCatalogue[cwd] = entry["skills"].array.compactMap(SkillOption.init)
+    }
+    /// Selects the model and effort sent with turn/start; nil sends the server default.
+    public mutating func select(model: String?, effort: String?) {
+        selectedModel = model
+        selectedEffort = model == nil ? nil : effort
+    }
+    public mutating func select(skills: [String]) { selectedSkills = skills }
+    public mutating func rename(threadID: String, name: String?) { threads[threadID]?.name = name }
+    public mutating func remove(threadID: String) {
+        threads[threadID] = nil; seenUserItems[threadID] = nil
+        serverRequests[threadID] = nil; goals[threadID] = nil; todos[threadID] = nil
+    }
     public var recentWorkspaces: [String] {
         var seen = Set<String>()
         return threads.values.sorted { $0.updatedAt > $1.updatedAt }.compactMap { seen.insert($0.cwd).inserted ? $0.cwd : nil }
@@ -107,6 +246,10 @@ public struct ConversationStore: Sendable {
             params["expectedTurnId"] = .string(turn)
             return TurnRequest(method: "turn/steer", params: .object(params))
         }
+        if let model = selectedModel {
+            params["model"] = .string(model)
+            if let effort = selectedEffort { params["effort"] = .string(effort) }
+        }
         return TurnRequest(method: "turn/start", params: .object(params))
     }
     @discardableResult public mutating func echo(threadID: String, text: String) -> String {
@@ -117,6 +260,8 @@ public struct ConversationStore: Sendable {
     public mutating func removeEcho(threadID: String, id: String) { threads[threadID]?.pendingMessages.removeAll { $0.id == id } }
     public mutating func disconnect() {
         for id in Array(threads.keys) { settle(id); threads[id]?.status = "notLoaded"; threads[id]?.activeFlags = [] }
+        // The bridge replays requests that are still unanswered when the phone reconnects.
+        serverRequests = [:]
     }
     public mutating func interrupt(threadID: String) {
         guard var thread = threads[threadID], let index = thread.turns.lastIndex(where: { $0.status == "inProgress" }) else { return }
@@ -144,7 +289,19 @@ public struct ConversationStore: Sendable {
     }
     public mutating func apply(method: String, params p: JSONValue) {
         if method == "thread/started" { load(p["thread"]); return }
-        guard let id = p["threadId"].string, var thread = threads[id] else { return }
+        if method == "serverRequest/resolved" { resolveServerRequest(p["requestId"]); return }
+        guard let id = p["threadId"].string else { return }
+        switch method {
+        case "thread/goal/updated": goals[id] = ThreadGoal(p["goal"]); return
+        case "thread/goal/cleared": goals[id] = nil; return
+        case "thread/deleted": remove(threadID: id); return
+        case "extension_event":
+            // A todo extension event carries the full phase list in data.phases.
+            if case .array(let phases) = p["data"]["phases"] { todos[id] = phases.compactMap(TodoPhase.init) }
+            return
+        default: break
+        }
+        guard var thread = threads[id] else { return }
         if method == "thread/status/changed", let status = p["status"]["type"].string {
             thread.status = status; thread.activeFlags = p["status"]["activeFlags"].array.compactMap(\.string)
             threads[id] = thread
