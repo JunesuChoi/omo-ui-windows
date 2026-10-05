@@ -8,6 +8,8 @@ import { isModel, isSkill, isSkillError, isThread, parseNotification } from "./w
 import { selectSkillCatalog } from "./selectors";
 import { object, parseGoal } from "./live-wire";
 
+import { normalizeMcpPage, type McpServer } from "./mcp";
+
 const THREAD_PAGE_SIZE = 50;
 const RECENT_WORKSPACE_LIMIT = 10;
 
@@ -59,6 +61,9 @@ export interface NewSideRequest {
 
 /** Async operations over the bridge. Every promise resolves; bridge failures become error notices. */
 export interface AppActions {
+  loadMcpServers(): Promise<void>;
+  /** Section visibility scopes automatic reconnect/notification refreshes. */
+  setMcpSectionOpen(open: boolean): void;
   /** Forwards bridge events into the store and refreshes models and threads on each transition into "connected"; returns the unsubscriber. */
   connect(): () => void;
   refreshModels(): Promise<void>;
@@ -154,6 +159,35 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
       store.dispatch({ type: "todo/loaded", threadId, todo: history.todo, generation: live.generation, revision: live.todoRevision });
     } catch (error) {
       if (connection === connectionRevision && store.getState().conversations[threadId]?.live.generation === live.generation) fail(error, threadId);
+    }
+  };
+
+  let mcpSectionOpen = false;
+  let mcpRead = 0;
+  const loadMcpServers = async (): Promise<void> => {
+    const request = ++mcpRead;
+    const threadId = store.getState().activeThreadId;
+    store.dispatch({ type: "mcp/updated", mcp: { ...store.getState().mcp, loading: true, error: null } });
+    try {
+      const servers: McpServer[] = [];
+      let cursor: string | null = null;
+      const cursors = new Set<string>();
+      do {
+        const result: unknown = await bridge.request("mcpServerStatus/list", {
+          ...(threadId === null ? {} : { threadId }), ...(cursor === null ? {} : { cursor }), detail: "full",
+        });
+        if (request !== mcpRead) return;
+        const page = normalizeMcpPage(result);
+        servers.push(...page.servers);
+        cursor = page.nextCursor;
+        if (cursor !== null) {
+          if (cursors.has(cursor)) throw new Error("omo returned a repeated MCP page cursor");
+          cursors.add(cursor);
+        }
+      } while (cursor !== null);
+      store.dispatch({ type: "mcp/updated", mcp: { servers, loading: false, error: null, loadedAt: now() } });
+    } catch (error) {
+      if (request === mcpRead) store.dispatch({ type: "mcp/updated", mcp: { ...store.getState().mcp, loading: false, error: errorMessage(error) } });
     }
   };
 
@@ -363,6 +397,7 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
         if (status.state === "connected" && !wasConnected) {
           void refreshModels();
           void refreshThreads();
+          if (mcpSectionOpen) void loadMcpServers();
         }
       };
       const unsubscribers = [
@@ -375,6 +410,7 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
           if (!active) return;
           store.dispatch({ type: "rpc/notification", notification, receivedAtMs: now() });
           const parsed = parseNotification(notification);
+          if (parsed?.method === "mcpServer/startupStatus/updated" && mcpSectionOpen) void loadMcpServers();
           if (parsed?.method === "turn/completed") void readGoal(parsed.params.threadId);
           if (parsed?.method === "item/completed" && parsed.params.item.type === "dynamicToolCall") {
             const item = parsed.params.item;
@@ -414,6 +450,8 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
       };
     },
 
+    loadMcpServers,
+    setMcpSectionOpen(open) { mcpSectionOpen = open; },
     refreshModels,
     refreshThreads,
     loadSkills,

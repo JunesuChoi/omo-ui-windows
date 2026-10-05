@@ -18,6 +18,7 @@ import { parseNotification, parseServerRequest } from "./wire";
 
 export function createInitialState(): AppState {
   return {
+    mcp: { servers: [], loading: false, error: null, loadedAt: null },
     bridge: null,
     models: [],
     threads: {},
@@ -106,6 +107,8 @@ function applyThreadsListed(state: AppState, event: Extract<AppEvent, { type: "t
 
 export function reduce(state: AppState, event: AppEvent): AppState {
   switch (event.type) {
+    case "mcp/updated":
+      return { ...state, mcp: event.mcp };
     case "bridge/status":
       return applyBridgeStatus(state, event.status);
     case "rpc/notification": {
