@@ -5,6 +5,7 @@ import { themeRevealGeometry } from "./theme-reveal";
 let appliedPreference: ThemePreference | undefined;
 let stopFollowingSystem: (() => void) | undefined;
 let activeTransition: ViewTransition | undefined;
+let latestChoice = 0;
 
 const DARK_ATTRIBUTE = "data-ds-dark-theme";
 const DARK_QUERY = "(prefers-color-scheme: dark)";
@@ -34,11 +35,16 @@ export function applyThemePreference(pref: ThemePreference): void {
   stopFollowingSystem = () => query.removeEventListener("change", sync);
 }
 
-/** Apply in the snapshot update callback before persisting the preference. */
+/**
+ * Apply in the snapshot update callback before persisting the preference. Skipping an earlier transition does not
+ * cancel its update callback, so an update whose choice was superseded by a later one applies and persists nothing.
+ */
 export function revealThemePreference(pref: ThemePreference, control: HTMLElement, persist: () => void): void {
   activeTransition?.skipTransition();
+  const choice = ++latestChoice;
   const dark = pref === "dark" || (pref === "system" && window.matchMedia(DARK_QUERY).matches);
   const update = (): void => {
+    if (choice !== latestChoice) return;
     flushSync(() => {
       applyThemePreference(pref);
       persist();

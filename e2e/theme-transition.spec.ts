@@ -99,3 +99,25 @@ test("reduced motion, same darkness and unsupported transitions switch without s
     await launched.close();
   }
 });
+
+test("a later choice wins over an earlier theme reveal that has not applied yet", async () => {
+  const launched = await launchApp({ omo: "fake" });
+  try {
+    const { page } = launched;
+    await openLightSettings(page);
+    await page.emulateMedia({ reducedMotion: "no-preference", colorScheme: "light" });
+    // Both clicks land in one task, before the Dark reveal's snapshot update callback can run.
+    await page.evaluate(({ dark, system }) => {
+      (document.querySelector(`[data-testid="${dark}"]`) as HTMLButtonElement).click();
+      (document.querySelector(`[data-testid="${system}"]`) as HTMLButtonElement).click();
+    }, { dark: TESTID.settingsThemeDark, system: TESTID.settingsThemeSystem });
+    await expect(byTestId(page, TESTID.settingsThemeSystem)).toHaveAttribute("aria-pressed", "true");
+    await page.evaluate(() => Promise.all(document.getAnimations().map((animation) => animation.finished.catch(() => undefined))));
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await expect(page.locator("body")).not.toHaveAttribute("data-ds-dark-theme");
+    await expect(byTestId(page, TESTID.settingsThemeSystem)).toHaveAttribute("aria-pressed", "true");
+    expect((await page.evaluate(() => window.omo.getPreferences())).theme).toBe("system");
+  } finally {
+    await launched.close();
+  }
+});
