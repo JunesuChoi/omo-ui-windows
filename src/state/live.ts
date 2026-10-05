@@ -4,7 +4,7 @@ import { parseLiveExtension } from "./live-wire";
 
 export function emptyLiveState(): ThreadLiveState {
   return {
-    freshness: "unattached", runs: {}, runOrder: [], tasks: {}, taskOrder: [], historicalTasks: [],
+    freshness: "unattached", runs: {}, runOrder: [], tasks: {}, taskOrder: [], historicalTasks: [], taskWork: [],
     dagActivity: {}, heartbeat: null, goal: undefined, todo: null, diagnostics: 0,
     generation: 0, goalRevision: 0, todoRevision: 0,
   };

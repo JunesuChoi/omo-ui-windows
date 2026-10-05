@@ -13,21 +13,23 @@ import { useT } from "../../i18n";
 import { TESTID } from "../testids";
 import { uiState, useUiState } from "../ui-state";
 import { AboutSection } from "./AboutSection";
+import { AccountsSection } from "./AccountsSection";
 import { GeneralSection } from "./GeneralSection";
 import { OmoSection } from "./OmoSection";
 import { IphoneSection } from "./IphoneSection";
 import { McpSection } from "./McpSection";
 import css from "./SettingsDialog.module.css";
 
-type SectionId = "general" | "omo" | "mcp" | "iphone" | "about";
+type SectionId = "general" | "omo" | "accounts" | "mcp" | "iphone" | "about";
 
-const SECTIONS: readonly SectionId[] = ["general", "omo", "mcp", "iphone", "about"];
+const SECTIONS: readonly SectionId[] = ["general", "omo", "accounts", "mcp", "iphone", "about"];
 
 function NavIcon({ section }: { section: SectionId }) {
   switch (section) {
     case "general":
       return <IconSettingsOutlineMedium className={css.navIcon} size={16} />;
     case "iphone":
+    case "accounts":
     case "mcp":
     case "omo":
       return <IconDataOutlineMedium className={css.navIcon} size={16} />;
@@ -84,6 +86,7 @@ function SettingsPanel({ section, onSelect, onClose }: { section: SectionId; onS
           <div className={css.options}>
             {section === "general" && <GeneralSection />}
             {section === "omo" && <OmoSection />}
+            {section === "accounts" && <AccountsSection />}
             {section === "mcp" && <McpSection />}
             {section === "iphone" && <IphoneSection />}
             {section === "about" && <AboutSection />}

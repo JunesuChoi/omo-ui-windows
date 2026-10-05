@@ -1,4 +1,4 @@
-import type { HistoricalTask } from "../../../shared/ipc";
+import type { HistoricalTask, TaskWork } from "../../../shared/ipc";
 import type { DagActivity, DagNode, DagRun, LiveTask, TodoPhase, WireGoal } from "../../../shared/protocol";
 
 export type ActivityTask = LiveTask | HistoricalTask;
@@ -101,6 +101,28 @@ export function groupNodesByWave(run: DagRun): WaveGroup[] {
   return rest.length === 0 ? groups : [...groups, { index: null, nodes: rest }];
 }
 
+/** Topological layers include waiting nodes too; unknown/cyclic dependencies remain visibly unresolved. */
+export function groupNodesByDependency(run: DagRun): WaveGroup[] {
+  const remaining = new Map(run.nodes.map((node) => [node.id, node]));
+  const placed = new Set<string>();
+  const groups: WaveGroup[] = [];
+  while (remaining.size > 0) {
+    const nodes = [...remaining.values()].filter((node) => [
+      ...node.depends_on, ...run.edges.filter((edge) => edge.to === node.id).map((edge) => edge.from),
+    ].every((id) => placed.has(id)));
+    if (nodes.length === 0) {
+      groups.push({ index: null, nodes: [...remaining.values()] });
+      break;
+    }
+    groups.push({ index: groups.length, nodes });
+    for (const node of nodes) {
+      remaining.delete(node.id);
+      placed.add(node.id);
+    }
+  }
+  return groups;
+}
+
 export interface StateCount {
   state: string;
   count: number;
@@ -137,6 +159,54 @@ export function activitySummary(runs: readonly DagRun[], tasks: readonly Activit
       tasks.filter((task) => !isHistoricalTask(task) && task.status === "running").length
     : 0;
   return { running, total: runs.length + tasks.length };
+}
+
+/** Counts work entities once: a DAG node and the task it owns are the same work. */
+export function workSummary(runs: readonly DagRun[], tasks: readonly ActivityTask[], live: boolean) {
+  const linked = new Set(runs.flatMap((run) => run.nodes.flatMap((node) => node.task_id === undefined ? [] : [node.task_id])));
+  const states = [
+    ...runs.flatMap((run) => run.nodes.map((node) => node.state)),
+    ...tasks.filter((task) => !linked.has(task.task_id)).map((task) => task.status),
+  ];
+  return {
+    total: states.length,
+    done: states.filter((state) => state === "completed").length,
+    failed: states.filter((state) => state === "failed" || state === "error" || state === "lost").length,
+    running: live ? states.filter((state) => state === "running").length : 0,
+  };
+}
+
+export interface TaskTree {
+  task: ActivityTask;
+  work: TaskWork | undefined;
+  children: TaskTree[];
+}
+
+/** Ownership follows child_session_id -> parent_session_id, never DAG dependencies or numeric depth. */
+export function taskForest(tasks: readonly ActivityTask[], work: readonly TaskWork[]): TaskTree[] {
+  const byId = new Map(work.map((entry) => [entry.task.task_id, entry]));
+  const records = new Map<string, ActivityTask>(work.map((entry) => [entry.task.task_id, entry.task]));
+  for (const task of tasks) records.set(task.task_id, task);
+  const placed = new Set<string>();
+  const branch = (task: ActivityTask, ancestors: ReadonlySet<string>): TaskTree => {
+    placed.add(task.task_id);
+    const entry = byId.get(task.task_id);
+    const sessionId = !isHistoricalTask(task) ? task.child_session_id ?? entry?.task.child_session_id : entry?.task.child_session_id;
+    const seen = new Set([...ancestors, task.task_id]);
+    const children = sessionId === undefined ? [] : orderTasks(work.filter((child) =>
+      child.parentSessionId === sessionId && !seen.has(child.task.task_id) && !placed.has(child.task.task_id),
+    ).map((child) => records.get(child.task.task_id) ?? child.task)).map((child) => branch(child, seen));
+    return { task, work: entry, children };
+  };
+  return orderTasks(tasks).flatMap((task) => placed.has(task.task_id) ? [] : [branch(task, new Set())]);
+}
+
+/** Snapshot timestamps are ISO strings; unknown endpoints stay absent rather than inventing a duration. */
+export function nodeElapsedMs(node: DagNode, now: number, live: boolean): number | null {
+  if (node.started_at === undefined) return null;
+  const start = Date.parse(node.started_at);
+  const end = node.completed_at === undefined ? live && node.state === "running" ? now : NaN : Date.parse(node.completed_at);
+  return Number.isFinite(start) && Number.isFinite(end) ? Math.max(0, end - start) : null;
 }
 
 export function isHistoricalTask(task: ActivityTask): task is HistoricalTask {

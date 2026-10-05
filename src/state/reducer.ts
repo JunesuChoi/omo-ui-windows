@@ -107,6 +107,10 @@ function applyThreadsListed(state: AppState, event: Extract<AppEvent, { type: "t
 
 export function reduce(state: AppState, event: AppEvent): AppState {
   switch (event.type) {
+    case "taskWork/loaded":
+      return updateExistingConversation(state, event.threadId, (conversation) =>
+        conversation.live.generation !== event.generation ? conversation :
+          { ...conversation, live: { ...conversation.live, taskWork: event.work } });
     case "mcp/updated":
       return { ...state, mcp: event.mcp };
     case "bridge/status":

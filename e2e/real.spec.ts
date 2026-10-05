@@ -148,3 +148,40 @@ test("C003: a killed omo child reconnects and the thread keeps working", async (
   await expect(turn.locator(`[data-testid="${TESTID.assistantMessage}"]`).last()).toHaveText(/^\s*back\s*$/i);
   await shot(page, "C003-reconnected");
 });
+
+test("C006: editing a real message and regenerating its answer branch the thread and keep the original", async () => {
+  const { page } = current();
+  const original = await newSession(page);
+  createdThreads.add(original);
+  await sendAndFinish(page, "Reply with exactly: one");
+  await sendAndFinish(page, "Reply with exactly: two");
+  const activeId = (): Promise<string | null> =>
+    page.locator(`[data-testid="${TESTID.threadRow}"][aria-current="page"]`).getAttribute("data-thread-id");
+
+  const users = byTestId(page, TESTID.userMessage);
+  await users.nth(1).hover();
+  await byTestId(page, TESTID.editMessage).nth(1).click();
+  await byTestId(page, TESTID.editMessageInput).fill("Reply with exactly: three");
+  await byTestId(page, TESTID.editMessageSend).click();
+  await expect.poll(activeId).not.toBe(original);
+  const edited = await activeId();
+  if (edited !== null) createdThreads.add(edited);
+  await expect(users).toHaveText(["Reply with exactly: one", "Reply with exactly: three"]);
+  const answers = byTestId(page, TESTID.assistantMessage);
+  await expect(answers.last()).toHaveText(/^\s*three\s*$/i, { timeout: MODEL_TIMEOUT_MS });
+  await expect(byTestId(page, TESTID.turn).last()).toHaveAttribute("data-status", "completed", { timeout: MODEL_TIMEOUT_MS });
+  await shot(page, "C006-real-edited");
+
+  await byTestId(page, TESTID.regenerate).click();
+  await expect.poll(activeId).not.toBe(edited);
+  const regenerated = await activeId();
+  if (regenerated !== null) createdThreads.add(regenerated);
+  await expect(users).toHaveText(["Reply with exactly: one", "Reply with exactly: three"]);
+  await expect(byTestId(page, TESTID.turn).last()).toHaveAttribute("data-status", "completed", { timeout: MODEL_TIMEOUT_MS });
+  await expect(answers.last()).toHaveText(/^\s*three\s*$/i);
+  await shot(page, "C006-real-regenerated");
+
+  await threadRow(page, original).getByRole("button").first().click();
+  await expect(users).toHaveText(["Reply with exactly: one", "Reply with exactly: two"]);
+  await expect(answers.last()).toHaveText(/^\s*two\s*$/i);
+});

@@ -94,7 +94,11 @@ function sendMenuCommand(command: MenuCommand): void {
 
 function run(): void {
   const homeDir = os.homedir();
-  const supervisor = new OmoSupervisor({ homeDir, baseEnv: process.env, clientVersion: app.getVersion() });
+  const prefs = new PreferencesStore(app.getPath("userData"));
+  const supervisor = new OmoSupervisor({
+    homeDir, baseEnv: process.env, clientVersion: app.getVersion(),
+    autoUpdate: { enabled: () => process.env[ENV.omoAutoUpdate] !== "0" && prefs.get().omoAutoUpdate !== false },
+  });
 
   const iphone = new IphoneBridge(supervisor, undefined, undefined, loadIphoneToken(app.getPath("userData")));
 
@@ -104,7 +108,6 @@ function run(): void {
 
   void app.whenReady().then(() => {
     if (!app.isPackaged) app.dock?.setIcon(path.join(__dirname, "../build/icon.png"));
-    const prefs = new PreferencesStore(app.getPath("userData"));
     installApplicationMenu(sendMenuCommand);
     registerIpc({ supervisor, iphone, prefs, getWindow: () => mainWindow, homeDir });
     createWindow();

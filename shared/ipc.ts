@@ -13,6 +13,7 @@ import type {
   TurnError,
   TurnStatus,
   TodoPhase,
+  LiveTask,
 } from "./protocol";
 
 /** URL of the official omo installer script. */
@@ -32,6 +33,11 @@ export interface OmoBinary {
   source: OmoSource;
 }
 
+export type OmoUpdateStatus =
+  | { state: "checking" | "installing" | "current" | "disabled" }
+  | { state: "updated"; from: string; to: string }
+  | { state: "failed"; message: string };
+
 export interface BridgeStatus {
   state: BridgeState;
   omo: OmoBinary | null;
@@ -45,6 +51,8 @@ export interface BridgeStatus {
   /** Consecutive automatic restart attempts since the last successful connection. */
   restartAttempt: number;
   installCommand: typeof OMO_INSTALL_COMMAND;
+  /** Result of this app launch's automatic update, independent of connection failures. */
+  update?: OmoUpdateStatus;
 }
 
 export interface Diagnostics {
@@ -66,6 +74,8 @@ export type LocalePreference = "system" | "en" | "ko";
 export type ModelProfile = "daily-normal" | "daily-heavy" | "geeky-normal" | "geeky-heavy";
 
 export interface Preferences {
+  /** Automatic native omo updates on app launch; omitted in older preferences means enabled. */
+  omoAutoUpdate?: boolean;
   theme: ThemePreference;
   locale: LocalePreference;
   /** Workspace directory used for the last new session. */
@@ -112,6 +122,14 @@ export interface HistoryResult {
   tasks: HistoricalTask[];
 }
 
+/** Read-only child work from native task records and each child's active session branch. */
+export interface TaskWork {
+  parentSessionId: string;
+  task: LiveTask;
+  todo: HistoryResult["todo"];
+  activity: string | null;
+}
+
 export interface InstallLogLine {
   stream: "stdout" | "stderr";
   text: string;
@@ -138,7 +156,51 @@ export interface IphoneStatus {
   devices: { id: number; name: string; serial: string; state: "connecting" | "connected"; pendingApproval: boolean }[];
 }
 
+/** Identifies the user message a branch is cut at: its text and how many earlier user messages carry the same text. */
+export interface BranchPoint {
+  /** The message's text inputs joined with "\n", as the conversation item holds them. */
+  text: string;
+  /** 0 for the first user message with this text on the active branch, 1 for the second, and so on. */
+  occurrence: number;
+}
+
+/** The session file a branch wrote; `threadId` is its session id. */
+export interface BranchResult {
+  threadId: string;
+  path: string;
+}
+
+/** Subscription providers whose stored accounts report usage windows. */
+export const USAGE_PROVIDERS = ["anthropic-subscription", "chatgpt-subscription"] as const;
+export type UsageProvider = (typeof USAGE_PROVIDERS)[number];
+
+/** One usage window, such as Claude's 5-hour window; `percent` is the share used, null when uncapped. */
+export interface UsageWindow {
+  label: string;
+  percent: number | null;
+  resetsAt: string | null;
+  limited: boolean;
+}
+
+/**
+ * Usage of one stored subscription account, read with its own token in the main process; no secret crosses IPC.
+ * `state` is "expired" when the stored token is past its expiry (omo renews it the next time it uses the account).
+ */
+export interface AccountUsage {
+  provider: UsageProvider;
+  account: string;
+  email: string | null;
+  plan: string | null;
+  windows: UsageWindow[];
+  state: "ok" | "expired" | "failed";
+  message: string | null;
+}
+
 export interface OmoBridgeApi {
+  /** Reads every stored subscription account's usage windows; one failing account never blanks the others. */
+  readAccountUsage(): Promise<AccountUsage[]>;
+  /** Opens omo in Terminal running its own sign-in command for `provider` ("/claude-account add", "/gpt-account add", else "/login"). */
+  openAccountLogin(provider: string): Promise<void>;
   getIphoneStatus(): Promise<IphoneStatus>;
   onIphoneStatus(listener: (status: IphoneStatus) => void): () => void;
   getStatus(): Promise<BridgeStatus>;
@@ -156,6 +218,13 @@ export interface OmoBridgeApi {
   onInstallLog(listener: (line: InstallLogLine) => void): () => void;
   /** Parses the session JSONL at sessionPath, which must resolve inside the omo sessions directory. */
   loadHistory(sessionPath: string): Promise<HistoryResult>;
+  /** Reads only tasks reachable through explicit child-session links in this workspace's native task store. */
+  loadTaskWork(cwd: string, parentSessionId: string): Promise<TaskWork[]>;
+  /**
+   * Writes a new session beside `sessionPath` (which must resolve inside the omo sessions directory) holding that
+   * session's active branch up to, but excluding, the user message at `point`; the source session is not modified.
+   */
+  branchSession(sessionPath: string, point: BranchPoint): Promise<BranchResult>;
   /** Native folder picker; resolves null on cancel. The OMO_UI_QA_PICK_DIR variable short-circuits the dialog. */
   pickDirectory(defaultPath?: string | null): Promise<string | null>;
   pickImages(): Promise<string[]>;
@@ -190,6 +259,10 @@ export const IPC = {
   install: "omo:install",
   installLog: "omo:install-log",
   loadHistory: "history:load",
+  loadTaskWork: "history:task-work",
+  branchSession: "history:branch",
+  readAccountUsage: "accounts:usage",
+  openAccountLogin: "accounts:login",
   pickDirectory: "dialog:pick-directory",
   pickImages: "dialog:pick-images",
   saveImage: "attachments:save-image",
@@ -220,6 +293,8 @@ export const ENV = {
   userData: "OMO_UI_USER_DATA",
   /** Renderer dev-server URL loaded instead of dist/index.html. */
   devUrl: "OMO_UI_DEV_URL",
+  /** "0" skips the launch-time omo update regardless of the preference (tests and QA). */
+  omoAutoUpdate: "OMO_UI_OMO_AUTO_UPDATE",
 } as const;
 
 declare global {

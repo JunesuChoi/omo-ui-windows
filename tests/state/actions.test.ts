@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { OMO_INSTALL_COMMAND } from "../../shared/ipc";
-import type { BridgeStatus, HistoryResult, HistoryTurn, OmoBridgeApi, OpenTarget, OpenTargetId, Preferences } from "../../shared/ipc";
+import type { AccountUsage, BranchPoint, BranchResult, BridgeStatus, HistoryResult, HistoryTurn, OmoBridgeApi, OpenTarget, OpenTargetId, Preferences } from "../../shared/ipc";
 import type {
   ClientMethod,
   ClientParams,
@@ -33,6 +33,8 @@ type Handlers = { [M in ClientMethod]?: (params: ClientParams<M>) => ClientResul
 
 const THREAD_ID = "thread-1";
 const SESSION_PATH = "/Users/me/.omo/agent/sessions/thread-1.jsonl";
+const BRANCH_ID = "thread-branch";
+const BRANCH_PATH = "/Users/me/.omo/agent/sessions/thread-branch.jsonl";
 
 const model: Model = {
   id: "anthropic/claude-fable-5",
@@ -61,6 +63,7 @@ function bridgeStatus(state: BridgeStatus["state"]): BridgeStatus {
 }
 
 class FakeBridge implements OmoBridgeApi {
+  loadTaskWork(): ReturnType<OmoBridgeApi["loadTaskWork"]> { return Promise.resolve([]); }
   getIphoneStatus(): ReturnType<OmoBridgeApi["getIphoneStatus"]> { return Promise.resolve({ enabled: false, state: "searching", devices: [] }); }
   onIphoneStatus(): () => void { return () => {}; }
   readonly platform = "darwin";
@@ -105,6 +108,11 @@ class FakeBridge implements OmoBridgeApi {
     "thread/name/set": () => ({}),
     "thread/delete": () => ({}),
     "thread/read": ({ threadId }) => ({ thread: makeThread(threadId) }),
+    "account/providerAccounts/read": ({ provider }) => ({
+      provider, accounts: provider === "anthropic-subscription" ? [{ name: "work", source: "login", blocked: false, pinned: true }] : [],
+    }),
+    "account/providerAccounts/pin": () => ({}),
+    "account/providerAccounts/remove": () => ({}),
   };
 
   async request<M extends ClientMethod>(method: M, params: ClientParams<M>): Promise<ClientResult<M>> {
@@ -154,6 +162,15 @@ class FakeBridge implements OmoBridgeApi {
   loadHistory(sessionPath: string): Promise<HistoryResult> {
     this.historyLoads.push(sessionPath);
     return this.history();
+  }
+  usageRows: () => Promise<AccountUsage[]> = async () => [];
+  readonly logins: string[] = [];
+  readAccountUsage(): Promise<AccountUsage[]> { return this.usageRows(); }
+  async openAccountLogin(provider: string): Promise<void> { this.logins.push(provider); }
+  readonly branches: Array<{ sessionPath: string; point: BranchPoint }> = [];
+  async branchSession(sessionPath: string, point: BranchPoint): Promise<BranchResult> {
+    this.branches.push({ sessionPath, point });
+    return { threadId: BRANCH_ID, path: BRANCH_PATH };
   }
   async pickDirectory(): Promise<string | null> {
     return null;
@@ -900,5 +917,102 @@ describe("MCP inventory actions", () => {
     bridge.emitStatus(bridgeStatus("connected"));
     expect(reads).toBe(2);
     disconnect();
+  });
+});
+
+describe("branching from a user message", () => {
+  const user = (id: string, text: string) => ({ type: "userMessage" as const, id, clientId: null, content: [{ type: "text" as const, text, text_elements: [] }] });
+  const answer = (id: string) => ({ type: "agentMessage" as const, id, text: "ok", phase: null });
+  // Like omo's live items, item ids repeat across turns; only the turn id tells the messages apart.
+  const turnOf = (id: string, text: string): HistoryTurn => ({
+    id, status: "completed", error: null, items: [user("u", text), answer("a")], startedAt: 1_000, completedAt: 2_000,
+  });
+
+  async function opened() {
+    const context = setup();
+    await listThread(context);
+    context.bridge.history = async () => historyOf([turnOf("1", "first"), turnOf("2", "again"), turnOf("3", "again")]);
+    await context.actions.openThread(THREAD_ID);
+    context.bridge.calls.length = 0;
+    return context;
+  }
+
+  it("branches before the chosen repeat of a message and sends the edited text to the branch", async () => {
+    const context = await opened();
+    await expect(context.actions.branchFrom(THREAD_ID, "3", "u", "edited", "first (edited)")).resolves.toBe(true);
+    expect(context.bridge.branches).toEqual([{ sessionPath: SESSION_PATH, point: { text: "again", occurrence: 1 } }]);
+    expect(context.bridge.methods()).toEqual(["thread/resume", "thread/name/set", "thread/list", "turn/start"]);
+    expect(context.bridge.calls[0]?.params).toEqual({ threadId: BRANCH_ID });
+    expect(context.bridge.calls[1]?.params).toEqual({ threadId: BRANCH_ID, name: "first (edited)" });
+    expect(context.bridge.calls[3]?.params).toMatchObject({ threadId: BRANCH_ID, input: [{ type: "text", text: "edited" }] });
+    expect(context.store.getState().activeThreadId).toBe(BRANCH_ID);
+    expect(context.bridge.historyLoads.at(-1)).toBe(BRANCH_PATH);
+    expect(context.store.getState().conversations[BRANCH_ID]?.turns.map((turn) => turn.id)).toEqual(["1", "2", "3"]);
+  });
+
+  it("refuses while a turn of the thread is running and leaves the session alone", async () => {
+    const context = await opened();
+    const disconnect = context.actions.connect();
+    context.bridge.emitNotification("turn/started", { threadId: THREAD_ID, turn: runningTurn });
+    await expect(context.actions.branchFrom(THREAD_ID, "1", "u", "edited", "x")).resolves.toBe(false);
+    expect(context.bridge.branches).toEqual([]);
+    expect(selectToastNotice(context.store.getState())).toMatchObject({ code: "branchBusy" });
+    disconnect();
+  });
+
+  it("reports a message that the saved session does not hold instead of branching", async () => {
+    const context = await opened();
+    context.bridge.history = async () => historyOf([turnOf("1", "first")]);
+    await expect(context.actions.branchFrom(THREAD_ID, "3", "u", "edited", "x")).resolves.toBe(false);
+    expect(context.bridge.branches).toEqual([]);
+    expect(context.store.getState().activeThreadId).toBe(THREAD_ID);
+  });
+});
+
+describe("account actions", () => {
+  const usage: AccountUsage = {
+    provider: "anthropic-subscription", account: "work", email: null, plan: null, state: "ok", message: null,
+    windows: [{ label: "5h", percent: 42, resetsAt: null, limited: false }],
+  };
+
+  it("reads every provider's accounts and the usage rows in one snapshot", async () => {
+    const context = setup();
+    context.bridge.usageRows = async () => [usage];
+    const snapshot = await context.actions.loadAccounts();
+    expect(snapshot.providers.find((entry) => entry.provider === "anthropic-subscription")?.accounts).toEqual([
+      { name: "work", source: "login", blocked: false, pinned: true },
+    ]);
+    expect(snapshot.usage).toEqual([usage]);
+    expect(snapshot.usageError).toBeNull();
+  });
+
+  it("keeps a failing provider and a failing usage read as per-row errors", async () => {
+    const context = setup();
+    context.bridge.failing.add("account/providerAccounts/read");
+    context.bridge.usageRows = async () => { throw new Error("auth.json is unreadable"); };
+    const snapshot = await context.actions.loadAccounts();
+    expect(snapshot.providers.every((entry) => entry.error?.includes("failed") === true)).toBe(true);
+    expect(snapshot.usageError).toBe("auth.json is unreadable");
+  });
+
+  it("pins, unpins and removes through omo and opens omo's sign-in", async () => {
+    const context = setup();
+    await expect(context.actions.pinAccount("anthropic-subscription", "work")).resolves.toBe(true);
+    await expect(context.actions.pinAccount("anthropic-subscription", null)).resolves.toBe(true);
+    await expect(context.actions.removeAccount("anthropic-subscription", "work")).resolves.toBe(true);
+    expect(context.bridge.calls.map((call) => [call.method, call.params])).toEqual([
+      ["account/providerAccounts/pin", { provider: "anthropic-subscription", name: "work" }],
+      ["account/providerAccounts/pin", { provider: "anthropic-subscription", name: null }],
+      ["account/providerAccounts/remove", { provider: "anthropic-subscription", name: "work" }],
+    ]);
+    await expect(context.actions.openAccountLogin("chatgpt-subscription")).resolves.toBe(true);
+    expect(context.bridge.logins).toEqual(["chatgpt-subscription"]);
+  });
+
+  it("reports a rejected removal as an error notice and resolves false", async () => {
+    const context = setup();
+    context.bridge.failing.add("account/providerAccounts/remove");
+    await expect(context.actions.removeAccount("anthropic-subscription", "work")).resolves.toBe(false);
+    expect(selectToastNotice(context.store.getState())).toMatchObject({ level: "error" });
   });
 });

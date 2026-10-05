@@ -20,7 +20,8 @@ export { createInitialState, reduce } from "./reducer";
 export { createAppStore, StoreContext, useAppSelector, useAppStore } from "./store";
 export type { AppStore } from "./store";
 export { createActions } from "./actions";
-export type { ActionOptions, AppActions, NewSideRequest, SideStorage } from "./actions";
+export type { AccountsSnapshot, ActionOptions, AppActions, NewSideRequest, SideStorage } from "./actions";
+export { ACCOUNT_PROVIDERS } from "./actions";
 export { localSideStorage, memorySideStorage } from "./actions";
 export {
   SIDE_BACKGROUND_MARKER,

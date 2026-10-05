@@ -6,10 +6,14 @@ import { promisify } from "node:util";
 import { app, clipboard, dialog, ipcMain, shell } from "electron";
 import type { BrowserWindow, OpenDialogOptions } from "electron";
 import { ENV, IPC } from "../shared/ipc";
-import type { Diagnostics, HistoryResult, InstallResult, RequestEnvelope } from "../shared/ipc";
+import type { BranchResult, Diagnostics, HistoryResult, InstallResult, RequestEnvelope } from "../shared/ipc";
 import { CLIENT_METHODS } from "../shared/protocol";
 import type { ClientMethod, ClientParams, RequestId } from "../shared/protocol";
+import { openLogin } from "./accounts/login";
+import { readAccountUsage } from "./accounts/usage";
+import { branchSession } from "./history/branch-session";
 import { parseSessionJsonl } from "./history/session-jsonl";
+import { loadTaskWork } from "./history/task-work";
 import { RpcRequestError } from "./omo/app-server-client";
 import { runInstaller } from "./omo/installer";
 import { createOpenWorkspace } from "./open-workspace";
@@ -68,6 +72,16 @@ export function registerIpc(deps: IpcDeps): () => void {
     if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send(channel, payload);
   };
   let installing: Promise<InstallResult> | null = null;
+  /** Resolves a renderer-supplied session path, refusing anything outside the omo sessions directory. */
+  const sessionFile = async (sessionPath: unknown): Promise<string> => {
+    const requested = requireString(sessionPath, "sessionPath");
+    if (!path.isAbsolute(requested)) throw new Error("sessionPath must be absolute");
+    const codexHome = supervisor.initializeResult?.codexHome ?? path.join(homeDir, ".omo", "agent");
+    const root = await realpath(path.join(codexHome, "sessions"));
+    const target = await realpath(requested);
+    if (!isInside(root, target)) throw new Error("sessionPath is outside the omo sessions directory");
+    return target;
+  };
 
   const handlers: Record<string, (event: Electron.IpcMainInvokeEvent, ...args: unknown[]) => unknown> = {
     [IPC.getIphoneStatus]: () => deps.iphone?.getStatus() ?? { enabled: false, state: "searching", devices: [] },
@@ -102,14 +116,26 @@ export function registerIpc(deps: IpcDeps): () => void {
       })();
       return installing;
     },
-    [IPC.loadHistory]: async (_event, sessionPath): Promise<HistoryResult> => {
-      const requested = requireString(sessionPath, "sessionPath");
-      if (!path.isAbsolute(requested)) throw new Error("sessionPath must be absolute");
-      const codexHome = supervisor.initializeResult?.codexHome ?? path.join(homeDir, ".omo", "agent");
-      const root = await realpath(path.join(codexHome, "sessions"));
-      const target = await realpath(requested);
-      if (!isInside(root, target)) throw new Error("sessionPath is outside the omo sessions directory");
-      return parseSessionJsonl(await readFile(target, "utf8"));
+    [IPC.loadHistory]: async (_event, sessionPath): Promise<HistoryResult> =>
+      parseSessionJsonl(await readFile(await sessionFile(sessionPath), "utf8")),
+    [IPC.loadTaskWork]: (_event, cwd, parentSessionId) => loadTaskWork(
+      supervisor.initializeResult?.codexHome ?? path.join(homeDir, ".omo", "agent"),
+      requireString(cwd, "cwd"), requireString(parentSessionId, "parentSessionId"),
+    ),
+    [IPC.readAccountUsage]: () => readAccountUsage({ agentDir: supervisor.initializeResult?.codexHome ?? path.join(homeDir, ".omo", "agent") }),
+    [IPC.openAccountLogin]: async (_event, provider) => {
+      if (typeof provider !== "string" || !/^[a-z0-9-]{1,64}$/.test(provider)) throw new TypeError("provider must be a provider id");
+      const omo = supervisor.getStatus().omo;
+      if (omo === null) throw new Error("omo was not found; install it first");
+      await openLogin(omo.path, provider);
+    },
+    [IPC.branchSession]: async (_event, sessionPath, point): Promise<BranchResult> => {
+      if (typeof point !== "object" || point === null) throw new TypeError("point must be an object");
+      const { text, occurrence } = point as Record<string, unknown>;
+      if (typeof text !== "string" || typeof occurrence !== "number" || !Number.isInteger(occurrence) || occurrence < 0) {
+        throw new TypeError("point must hold a string text and a non-negative integer occurrence");
+      }
+      return branchSession(await sessionFile(sessionPath), { text, occurrence });
     },
     [IPC.pickDirectory]: async (_event, defaultPath): Promise<string | null> => {
       const qaDir = process.env[ENV.qaPickDir];

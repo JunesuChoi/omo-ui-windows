@@ -3,9 +3,11 @@ import { Button, IconDownloadOutlineRegular, IconRefreshOutlineRegular } from "@
 import { OMO_INSTALL_COMMAND } from "../../../shared/ipc";
 import type { Diagnostics } from "../../../shared/ipc";
 import { useT } from "../../i18n";
+import { useAppSelector } from "../../state/store";
 import { InstallStatus } from "../onboarding/InstallStatus";
 import { useInstaller } from "../onboarding/install";
 import { TESTID } from "../testids";
+import { updatePreferences, useUiState } from "../ui-state";
 import { errorMessage, useDiagnostics } from "./diagnostics";
 import { SectionHeading, SettingRow } from "./SectionHeading";
 import css from "./SettingsDialog.module.css";
@@ -66,8 +68,21 @@ export function OmoSection() {
   const t = useT();
   const diagnostics = useDiagnostics();
   const installer = useInstaller();
+  const update = useAppSelector((state) => state.bridge?.update);
+  const { preferences } = useUiState();
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [restart, setRestart] = useState<RestartState>({ kind: "idle" });
   const installing = installer.phase.kind === "running";
+  const updating = update?.state === "checking" || update?.state === "installing";
+  const toggleUpdate = (): void => {
+    setSaving(true);
+    setSaveError(null);
+    updatePreferences({ omoAutoUpdate: preferences?.omoAutoUpdate === false }).then(
+      () => setSaving(false),
+      (error: unknown) => { setSaving(false); setSaveError(errorMessage(error)); },
+    );
+  };
 
   const runRestart = (): void => {
     setRestart({ kind: "running" });
@@ -80,6 +95,31 @@ export function OmoSection() {
   return (
     <section className={css.section}>
       <SectionHeading title={t("shell.settings.nav.omo")} intro={t("shell.settings.omo.intro")} />
+      <div className={css.card}>
+        <SettingRow title={t("shell.settings.omo.autoUpdate")} hint={t("shell.settings.omo.autoUpdateHint")}>
+          <Button
+            variant="outline"
+            data-testid={TESTID.omoAutoUpdate}
+            aria-label={t("shell.settings.omo.autoUpdate")}
+            aria-pressed={preferences?.omoAutoUpdate !== false}
+            disabled={saving || preferences === null}
+            onClick={toggleUpdate}
+          >
+            {t(preferences?.omoAutoUpdate === false ? "shell.settings.omo.autoUpdateOff" : "shell.settings.omo.autoUpdateOn")}
+          </Button>
+        </SettingRow>
+        {update && (
+          <p className={update.state === "failed" ? css.rowError : css.cardFooter} role="status"
+            data-testid={TESTID.omoUpdateStatus} data-state={update.state}>
+            {update.state === "updated"
+              ? t("shell.settings.omo.update.updated", { from: update.from, to: update.to })
+              : update.state === "failed"
+                ? t("shell.settings.omo.update.failed", { message: update.message })
+                : t(`shell.settings.omo.update.${update.state}`)}
+          </p>
+        )}
+        {saveError !== null && <p className={css.rowError} role="alert">{t("shell.settings.saveFailed", { message: saveError })}</p>}
+      </div>
       <div className={css.card} data-testid={TESTID.diagnostics} aria-busy={diagnostics.kind === "loading"}>
         <div className={css.cardBody}>
           {diagnostics.kind === "loading" && <p className={css.muted}>{t("shell.settings.omo.loading")}</p>}
@@ -97,7 +137,7 @@ export function OmoSection() {
             variant="outline"
             icon={<IconRefreshOutlineRegular />}
             data-testid={TESTID.restartOmo}
-            disabled={restart.kind === "running" || installing}
+            disabled={restart.kind === "running" || installing || updating}
             onClick={runRestart}
           >
             {restart.kind === "running" ? t("shell.settings.omo.restarting") : t("shell.settings.omo.restart")}
@@ -113,7 +153,7 @@ export function OmoSection() {
             variant="primary"
             icon={<IconDownloadOutlineRegular />}
             data-testid={TESTID.reinstallOmo}
-            disabled={installing}
+            disabled={installing || updating}
             onClick={installer.start}
           >
             {installing ? t("shell.onboarding.installing") : t("shell.settings.omo.reinstall")}

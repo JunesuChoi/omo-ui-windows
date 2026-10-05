@@ -15,6 +15,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
+import { runDagScenario } from "./dag-scenario.mjs";
 
 const VERSION_LINE = "omo 5.1.4-fake (engine: fake)";
 const USAGE = "usage: fake-omo --version | fake-omo app-server --listen stdio://\n";
@@ -265,7 +266,18 @@ function loadPersistedThreads() {
   }
 }
 
+// Like omo, a session file another process wrote into the sessions directory (a branch) can be resumed by its id.
+function loadSessionById(threadId) {
+  for (const name of readdirSync(sessionsDir)) {
+    if (!name.endsWith(".jsonl")) continue;
+    const file = join(sessionsDir, name);
+    const header = readFileSync(file, "utf8").split("\n", 1)[0];
+    if (header.includes(`"id":"${threadId}"`)) loadSessionFile(file);
+  }
+}
+
 function getThread(threadId) {
+  if (!threads.has(threadId)) loadSessionById(threadId);
   const record = threads.get(threadId);
   if (record === undefined) throw new RpcFailure(INVALID_REQUEST, `Thread not found: ${threadId}`);
   return record;
@@ -664,6 +676,7 @@ function runScenario(record, turn, text) {
   const scene = DEMO?.scenes?.find((candidate) => text.includes(candidate.match));
   if (scene !== undefined) return runDemoScene(record, turn, scene);
   if (text.includes("SCENARIO:omo-live")) return runLive(record, turn);
+  if (text.includes("SCENARIO:dag")) return runDagScenario(record, turn, { home, notify, guard });
   if (text === "SCENARIO:skills-history") {
     const item = openAgentMessage(turn);
     appendAgentDelta(turn, item, "Built the thing.");
@@ -881,6 +894,14 @@ const MODELS = (DEMO?.models ?? [
   supportedReasoningEfforts: ["low", "medium", "high", "xhigh"].map((reasoningEffort) => ({ reasoningEffort, description: "" })),
 }));
 
+// Secret-free descriptors like omo's account/providerAccounts/read; pin and remove change them in memory.
+const providerAccounts = {
+  "anthropic-subscription": [
+    { name: "work", source: "login", blocked: false, pinned: false },
+    { name: "old", source: "login", blocked: true, pinned: false },
+  ],
+};
+
 const DEFAULT_SKILLS = [
   { name: "ulw-loop", description: "Run a goal-driven loop.", scope: "system", enabled: true },
   { name: "mass-ulw", description: "Run dependency-ordered workflows.", scope: "system", enabled: true },
@@ -993,6 +1014,31 @@ function handleRequest(id, method, params) {
       const record = getThread(requireString(params, "threadId"));
       if (params.name !== "fake.advance") throw new RpcFailure(NOT_FOUND, "Extension not found");
       record.advanceLive?.();
+      respond(id, {});
+      return;
+    }
+    case "account/providerAccounts/read": {
+      const provider = requireString(params, "provider");
+      respond(id, { provider, accounts: providerAccounts[provider] ?? [] });
+      return;
+    }
+    case "account/providerAccounts/pin": {
+      const accounts = providerAccounts[requireString(params, "provider")] ?? [];
+      for (const account of accounts) account.pinned = account.name === params.name;
+      respond(id, {});
+      return;
+    }
+    case "account/providerAccounts/remove": {
+      const provider = requireString(params, "provider");
+      providerAccounts[provider] = (providerAccounts[provider] ?? []).filter((account) => account.name !== params.name);
+      // Like omo, removal also drops the stored credential from auth.json.
+      const authFile = join(home, "auth.json");
+      if (existsSync(authFile)) {
+        const auth = JSON.parse(readFileSync(authFile, "utf8"));
+        const pool = auth[provider]?.accounts;
+        if (Array.isArray(pool)) auth[provider].accounts = pool.filter((account) => account?.name !== params.name);
+        writeFileSync(authFile, JSON.stringify(auth));
+      }
       respond(id, {});
       return;
     }

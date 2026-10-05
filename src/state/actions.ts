@@ -1,6 +1,7 @@
-import type { BridgeStatus, OmoBridgeApi } from "../../shared/ipc";
-import type { ApprovalDecision, ReasoningEffort, RequestId, RpcNotification, ThreadSessionResult } from "../../shared/protocol";
+import type { AccountUsage, BridgeStatus, OmoBridgeApi } from "../../shared/ipc";
+import type { ApprovalDecision, ProviderAccount, ReasoningEffort, RequestId, RpcNotification, ThreadSessionResult } from "../../shared/protocol";
 import { messageInput, type ImageInput } from "../ui/composer/attachments";
+import { resendOf, storedText } from "../ui/conversation/resend";
 import type { AppStore } from "./store";
 import type { AppState, NoticeCode, SessionModel, SideChat } from "./types";
 import { parseStoredSides, selectSidesOf, sideDraftKey, sideName } from "./btw";
@@ -59,8 +60,23 @@ export interface NewSideRequest {
   context: boolean;
 }
 
+/** Providers whose accounts the Accounts settings list; subscription providers always show, others only with accounts. */
+export const ACCOUNT_PROVIDERS = ["anthropic-subscription", "chatgpt-subscription", "kimi-coding", "deepseek", "zai", "google", "openai"] as const;
+
+/** One read of every provider's accounts and every subscription account's usage; failures stay per row. */
+export interface AccountsSnapshot {
+  providers: Array<{ provider: string; accounts: ProviderAccount[]; error: string | null }>;
+  usage: AccountUsage[];
+  usageError: string | null;
+}
+
 /** Async operations over the bridge. Every promise resolves; bridge failures become error notices. */
 export interface AppActions {
+  loadAccounts(): Promise<AccountsSnapshot>;
+  /** `name: null` clears the provider's pin. */
+  pinAccount(provider: string, name: string | null): Promise<boolean>;
+  removeAccount(provider: string, name: string): Promise<boolean>;
+  openAccountLogin(provider: string): Promise<boolean>;
   loadMcpServers(): Promise<void>;
   /** Section visibility scopes automatic reconnect/notification refreshes. */
   setMcpSectionOpen(open: boolean): void;
@@ -79,6 +95,12 @@ export interface AppActions {
   /** Sends to the active thread: steers the running turn, otherwise resumes the thread if needed and starts a turn; resolves true when omo accepted the message. */
   sendMessage(text: string, images?: readonly ImageInput[]): Promise<boolean>;
   interrupt(): Promise<void>;
+  /**
+   * Edits or rerolls from a user message: writes a new session holding `threadId`'s history before the message
+   * `itemId`, resumes and activates it under `name`, and sends `text` with the message's images as its next turn.
+   * The original thread is left unchanged. Resolves true when omo accepted the turn.
+   */
+  branchFrom(threadId: string, turnId: string, itemId: string, text: string, name: string): Promise<boolean>;
   renameThread(threadId: string, name: string): Promise<void>;
   deleteThread(threadId: string): Promise<void>;
   answerApproval(id: RequestId, decision: ApprovalDecision, reason?: string): Promise<void>;
@@ -164,6 +186,31 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
 
   let mcpSectionOpen = false;
   let mcpRead = 0;
+  const loadAccounts = async (): Promise<AccountsSnapshot> => {
+    const [providers, usage] = await Promise.all([
+      Promise.all(ACCOUNT_PROVIDERS.map(async (provider) => {
+        try {
+          const result = await bridge.request("account/providerAccounts/read", { provider });
+          return { provider, accounts: Array.isArray(result.accounts) ? result.accounts : [], error: null };
+        } catch (error) {
+          return { provider, accounts: [], error: errorMessage(error) };
+        }
+      })),
+      bridge.readAccountUsage().then((rows) => ({ rows, error: null }), (error: unknown) => ({ rows: [], error: errorMessage(error) })),
+    ]);
+    return { providers, usage: usage.rows, usageError: usage.error };
+  };
+
+  const accountAction = async (run: () => Promise<unknown>): Promise<boolean> => {
+    try {
+      await run();
+      return true;
+    } catch (error) {
+      fail(error);
+      return false;
+    }
+  };
+
   const loadMcpServers = async (): Promise<void> => {
     const request = ++mcpRead;
     const threadId = store.getState().activeThreadId;
@@ -450,6 +497,10 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
       };
     },
 
+    loadAccounts,
+    pinAccount: (provider, name) => accountAction(() => bridge.request("account/providerAccounts/pin", { provider, name })),
+    removeAccount: (provider, name) => accountAction(() => bridge.request("account/providerAccounts/remove", { provider, name })),
+    openAccountLogin: (provider) => accountAction(() => bridge.openAccountLogin(provider)),
     loadMcpServers,
     setMcpSectionOpen(open) { mcpSectionOpen = open; },
     refreshModels,
@@ -514,6 +565,48 @@ export function createActions(store: AppStore, bridge: OmoBridgeApi, options: Ac
         console.warn("turn/interrupt rejected; ending the turn locally", error);
         store.dispatch({ type: "turn/settled", threadId, status: "interrupted", settledAtMs: now() });
       }
+    },
+
+    async branchFrom(threadId, turnId, itemId, text, name) {
+      const state = store.getState();
+      const conversation = state.conversations[threadId];
+      const path = state.threads[threadId]?.path ?? null;
+      if (conversation === undefined || path === null) return false;
+      if (conversation.activeTurnId !== null) {
+        notify("error", "Wait for the running turn to finish, or stop it, before editing or regenerating.", threadId, "branchBusy");
+        return false;
+      }
+      // Item ids are only unique within a turn, so the clicked message is found by its turn and item id together.
+      const shown = conversation.turns.flatMap((turn) =>
+        turn.items.flatMap((entry) => (entry.item.type === "userMessage" ? [{ turnId: turn.id, item: entry.item }] : [])));
+      const index = shown.findIndex((entry) => entry.turnId === turnId && entry.item.id === itemId);
+      const clicked = shown[index]?.item;
+      if (clicked === undefined) return false;
+      const key = resendOf(clicked.content).text;
+      const repeat = shown.slice(0, index).filter((entry) => resendOf(entry.item.content).text === key).length;
+      let branchId: string;
+      try {
+        const history = await bridge.loadHistory(path);
+        const stored = history.turns.flatMap((turn) => turn.items.flatMap((item) => (item.type === "userMessage" ? [item] : [])));
+        const target = stored.filter((item) => resendOf(item.content).text === key)[repeat];
+        if (target === undefined) throw new Error("This message is not in the saved session yet; reopen the thread and try again.");
+        const raw = storedText(target.content);
+        const occurrence = stored.slice(0, stored.indexOf(target)).filter((item) => storedText(item.content) === raw).length;
+        const branch = await bridge.branchSession(path, { text: raw, occurrence });
+        branchId = branch.threadId;
+        const resumed = await bridge.request("thread/resume", { threadId: branchId });
+        if (!isThread(resumed.thread)) throw new Error("omo returned a malformed thread/resume result");
+        store.dispatch({ type: "thread/opened", thread: resumed.thread, resumed: true, session: sessionOf(resumed) });
+        store.dispatch({ type: "thread/activated", threadId: branchId });
+        store.dispatch({ type: "history/loaded", threadId: branchId, ...(await bridge.loadHistory(branch.path)) });
+        await bridge.request("thread/name/set", { threadId: branchId, name });
+        store.dispatch({ type: "rpc/notification", notification: { method: "thread/name/updated", params: { threadId: branchId, threadName: name } }, receivedAtMs: now() });
+      } catch (error) {
+        fail(error, threadId);
+        return false;
+      }
+      void refreshThreads();
+      return deliver(branchId, text, false, resendOf(clicked.content).images);
     },
 
     renameThread: (threadId, name) =>

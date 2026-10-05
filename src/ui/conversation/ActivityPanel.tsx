@@ -1,342 +1,227 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  IconBranchOutlineRegular,
-  IconChevronDownOutlineRegular,
-  IconChevronRightOutlineRegular,
-  StateDot,
-} from "@deepseek-ai/dsh-client-ui-primitives";
-import type { DagActivity, DagNode, DagRun, LiveTask } from "../../../shared/protocol";
+import { IconBranchOutlineRegular, StateDot } from "@deepseek-ai/dsh-client-ui-primitives";
+import type { DagActivity, DagNode, DagRun } from "../../../shared/protocol";
 import { useT, type MessageKey, type Translate } from "../../i18n";
-import type { ThreadLiveState } from "../../state";
 import { selectDagRuns, selectTasks, selectThreadLiveState } from "../../state";
 import { useAppSelector } from "../app-context";
 import { TESTID } from "../testids";
 import {
-  activitySummary,
-  groupNodesByWave,
-  isHistoricalTask,
-  isSuspended,
-  knownNodeState,
-  knownRunStatus,
-  knownTaskStatus,
-  nodeActivityLine,
-  nodeDot,
-  orderTasks,
-  runDot,
-  runStateCounts,
-  runTotal,
-  taskActivityLine,
-  taskCounters,
-  taskDot,
-  taskElapsedMs,
-  taskExcerpt,
-  taskRoute,
-  taskTitle,
-  type ActivityTask,
-  type NodeState,
-  type RunStatus,
-  type TaskStatus,
+  currentTodo, groupNodesByDependency, isHistoricalTask, isSuspended, knownNodeState, knownRunStatus, knownTaskStatus,
+  nodeActivityLine, nodeDot, nodeElapsedMs, runDot, taskActivityLine, taskDot, taskElapsedMs, taskExcerpt,
+  taskForest, taskRoute, taskTitle, todoCounts, todoDot, workSummary,
+  type NodeState, type RunStatus, type TaskStatus, type TaskTree,
 } from "./activity-model";
 import { formatDuration } from "./format";
+import { useTaskWork } from "./use-task-work";
 import css from "./ActivityPanel.module.css";
 
 const NODE_LABELS = {
-  pending: "activity.node.pending",
-  blocked: "activity.node.blocked",
-  scheduled: "activity.node.scheduled",
-  running: "activity.node.running",
-  completed: "activity.node.completed",
-  failed: "activity.node.failed",
-  cancelled: "activity.node.cancelled",
-  skipped: "activity.node.skipped",
+  pending: "activity.node.pending", blocked: "activity.node.blocked", scheduled: "activity.node.scheduled",
+  running: "activity.node.running", completed: "activity.node.completed", failed: "activity.node.failed",
+  cancelled: "activity.node.cancelled", skipped: "activity.node.skipped",
 } as const satisfies Record<NodeState, MessageKey>;
-
 const RUN_LABELS = {
-  pending: "activity.runStatus.pending",
-  running: "activity.runStatus.running",
-  paused: "activity.runStatus.paused",
-  completed: "activity.runStatus.completed",
-  failed: "activity.runStatus.failed",
-  cancelled: "activity.runStatus.cancelled",
+  pending: "activity.runStatus.pending", running: "activity.runStatus.running", paused: "activity.runStatus.paused",
+  completed: "activity.runStatus.completed", failed: "activity.runStatus.failed", cancelled: "activity.runStatus.cancelled",
 } as const satisfies Record<RunStatus, MessageKey>;
-
 const TASK_LABELS = {
-  pending: "activity.task.pending",
-  running: "activity.task.running",
-  completed: "activity.task.completed",
-  error: "activity.task.error",
-  cancelled: "activity.task.cancelled",
-  interrupted: "activity.task.interrupted",
-  lost: "activity.task.lost",
+  pending: "activity.task.pending", running: "activity.task.running", completed: "activity.task.completed",
+  error: "activity.task.error", cancelled: "activity.task.cancelled", interrupted: "activity.task.interrupted", lost: "activity.task.lost",
 } as const satisfies Record<TaskStatus, MessageKey>;
-
-const NO_ACTIVITY: Record<string, DagActivity> = {};
 
 function nodeLabel(state: string, t: Translate): string {
   const known = knownNodeState(state);
   return known === null ? state : t(NODE_LABELS[known]);
 }
-
-function runLabel(status: string, t: Translate): string {
-  const known = knownRunStatus(status);
-  return known === null ? status : t(RUN_LABELS[known]);
-}
-
 function taskLabel(status: string, t: Translate): string {
   const known = knownTaskStatus(status);
   return known === null ? status : t(TASK_LABELS[known]);
 }
-
-function useFreshness(threadId: string): ThreadLiveState["freshness"] {
-  return useAppSelector((state) => selectThreadLiveState(state, threadId)?.freshness ?? "unattached");
-}
-
-/** Ticks once a second only while something live is running, so settled or restored rows never re-render on a timer. */
 function useNow(ticking: boolean): number {
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(Date.now);
   useEffect(() => {
-    if (!ticking) return;
     setNow(Date.now());
+    if (!ticking) return;
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [ticking]);
   return now;
 }
 
-/** Header chip with running/total counts; renders nothing while the thread has no runs or tasks. */
-export function ActivityToggle({
-  threadId,
-  open,
-  controlsId,
-  onToggle,
-}: {
-  threadId: string;
-  open: boolean;
-  controlsId: string;
-  onToggle: () => void;
+/** Collapsed by the conversation owner; no chip for an empty roster. Linked tasks count only once. */
+export function ActivityToggle({ threadId, open, controlsId, onToggle }: {
+  threadId: string; open: boolean; controlsId: string; onToggle: () => void;
 }) {
   const t = useT();
   const runs = useAppSelector((state) => selectDagRuns(state, threadId));
   const tasks = useAppSelector((state) => selectTasks(state, threadId));
-  const freshness = useFreshness(threadId);
-  const { running, total } = activitySummary(runs, tasks, freshness === "live");
+  const freshness = useAppSelector((state) => selectThreadLiveState(state, threadId)?.freshness ?? "unattached");
+  const { done, failed, running, total } = workSummary(runs, tasks, freshness === "live");
   if (total === 0) return null;
+  const label = [t("activity.chipDone", { done, total }), ...(failed > 0 ? [t("activity.chipFailed", { failed })] : [])].join(" · ");
   return (
-    <button
-      type="button"
-      className={css.toggle}
-      data-testid={TESTID.omoActivityToggle}
-      data-freshness={freshness}
-      data-open={open ? "" : undefined}
-      aria-expanded={open}
-      aria-controls={open ? controlsId : undefined}
-      aria-label={t("activity.toggleAria", { running, total })}
-      onClick={onToggle}
-    >
+    <button type="button" className={css.toggle} data-testid={TESTID.omoActivityToggle} data-freshness={freshness}
+      data-open={open ? "" : undefined} aria-expanded={open} aria-controls={open ? controlsId : undefined}
+      aria-label={`${t("activity.region")}: ${label}`} onClick={onToggle}>
       <IconBranchOutlineRegular size={14} className={css.toggleIcon} />
       <span>{t("activity.toggle")}</span>
-      <span className={css.toggleCount}>{t("activity.chipCount", { running, total })}</span>
+      <span className={css.toggleCount}>{t("activity.chipDone", { done, total })}</span>
+      {failed > 0 && <span className={css.failureCount}>{t("activity.chipFailed", { failed })}</span>}
       {running > 0 && <StateDot state="ongoing" size={10} />}
     </button>
   );
 }
 
-function NodeRow({
-  node,
-  live,
-  activity,
-  task,
-}: {
-  node: DagNode;
-  live: boolean;
-  activity: DagActivity | null;
-  task: LiveTask | undefined;
+/** One line per work entity; todos, full model, result and prompt are available without crowding the overview. */
+function WorkRow({ tree, node, activity, dependencies = [], live, now, depth = 0 }: {
+  tree?: TaskTree; node?: DagNode; activity?: DagActivity; dependencies?: string[]; live: boolean; now: number; depth?: number;
 }) {
   const t = useT();
-  const line = nodeActivityLine(node, activity, task);
-  const label = node.label?.trim() ?? "";
+  const task = tree?.task;
+  const work = tree?.work;
+  const historical = task !== undefined && isHistoricalTask(task);
+  const executing = live && !historical && (task === undefined || !isSuspended(task));
+  const status = node?.state ?? task?.status ?? "pending";
+  const label = node === undefined ? task === undefined ? "" : taskTitle(task) : node.label?.trim() || node.id;
+  const route = task === undefined ? [] : taskRoute(task);
+  const duration = node === undefined ? task === undefined ? null : taskElapsedMs(task, now) :
+    nodeElapsedMs(node, now, executing);
+  const elapsed = duration ?? (task === undefined || historical ? null :
+    task.status === "running" && executing ? Math.max(0, now - Date.parse(task.created_at)) : task.run_stats?.runtime_ms ?? null);
+  const phases = work?.todo?.phases ?? [];
+  const counts = todoCounts(phases);
+  const todo = counts.total > 0 ? `${counts.done}/${counts.total}` : null;
+  const current = currentTodo(phases);
+  const line = node === undefined ? task === undefined ? null : taskActivityLine(task) :
+    nodeActivityLine(node, activity ?? null, task);
+  const result = task === undefined ? null : taskExcerpt(task);
+  const error = node?.last_error?.message ?? (result?.kind === "error" ? result.text : null);
+  const detail = error ?? (current === null ? line ?? work?.activity ?? (result?.text ?? null) : t("activity.now", { activity: current }));
+  const children = tree?.children ?? [];
+  const [childrenOpen, setChildrenOpen] = useState(depth < 2);
+  const fullRoute = route.join(" · ");
+  const model = task?.model?.split("/").at(-1);
+  const agent = task?.category ?? task?.agent_type;
+  const statusText = node === undefined ? taskLabel(status, t) : nodeLabel(status, t);
   return (
-    <li className={css.node} data-testid={TESTID.dagNode} data-node-id={node.id} data-state={node.state}>
-      <div className={css.rowMain}>
-        <span className={css.dotSlot}>
-          <StateDot state={nodeDot(node.state, live)} />
-        </span>
-        <span className={css.nodeLabel} title={node.prompt}>
-          {label === "" ? node.id : label}
-        </span>
-        <span className={css.state} data-state={node.state}>
-          {nodeLabel(node.state, t)}
-        </span>
-      </div>
-      {line !== null && <p className={css.detail}>{line}</p>}
-      {node.state === "failed" && node.last_error !== undefined && (
-        <p className={css.error} title={node.last_error.code}>
-          {node.last_error.message}
-        </p>
-      )}
-    </li>
-  );
-}
-
-function RunCard({
-  run,
-  live,
-  activity,
-  tasks,
-}: {
-  run: DagRun;
-  live: boolean;
-  activity: Record<string, DagActivity>;
-  tasks: Record<string, LiveTask>;
-}) {
-  const t = useT();
-  const [override, setOverride] = useState<boolean | null>(null);
-  const open = override ?? run.status !== "completed";
-  const groups = useMemo(() => groupNodesByWave(run), [run]);
-  const counts = runStateCounts(run)
-    .map(({ state, count }) => t("activity.count", { state: nodeLabel(state, t), count }))
-    .join(" · ");
-  return (
-    <div className={css.run} data-testid={TESTID.dagRun} data-run-id={run.run_id} data-status={run.status}>
-      <button
-        type="button"
-        className={css.runHeader}
-        aria-expanded={open}
-        aria-label={t(open ? "activity.run.collapse" : "activity.run.expand", { name: run.name })}
-        onClick={() => setOverride(!open)}
-      >
-        <span className={css.chevron} aria-hidden>
-          {open ? <IconChevronDownOutlineRegular size={14} /> : <IconChevronRightOutlineRegular size={14} />}
-        </span>
-        <span className={css.runName} title={run.name}>
-          {run.name}
-        </span>
-        <span className={css.runCounts}>
-          {[t("activity.run.nodes", { count: runTotal(run) }), ...(counts === "" ? [] : [counts])].join(" · ")}
-          {run.waves.length > 0 && ` · ${t("activity.run.waves", { count: run.waves.length })}`}
-        </span>
-        <span className={css.runStatus} data-status={run.status}>
-          <StateDot state={runDot(run.status, live)} />
-          <span>{runLabel(run.status, t)}</span>
-        </span>
-      </button>
-      {open && (
-        <div className={css.waves}>
-          {groups.length === 0 && <p className={css.empty}>{t("activity.run.empty")}</p>}
-          {groups.map((group) => (
-            <div key={group.index ?? "rest"} className={css.wave}>
-              <span className={css.waveTitle}>
-                {group.index === null ? t("activity.run.unscheduled") : t("activity.run.wave", { index: group.index + 1 })}
-              </span>
-              <ul className={css.list}>
-                {group.nodes.map((node) => (
-                  <NodeRow
-                    key={node.id}
-                    node={node}
-                    live={live}
-                    activity={activity[node.id] ?? null}
-                    task={node.task_id === undefined ? undefined : tasks[node.task_id]}
-                  />
-                ))}
-              </ul>
+    <li className={css.entity} data-testid={node === undefined ? TESTID.omoTask : TESTID.dagNode}
+      data-node-id={node?.id} data-task-id={task?.task_id} data-state={node?.state} data-status={task?.status}
+      data-source={historical ? "history" : "live"} data-depth={depth}>
+      <details className={css.entityDetails}>
+        <summary className={css.entityLine} title={[statusText, label, fullRoute, detail, node?.prompt].filter(Boolean).join("\n")}>
+          <span className={css.dotSlot} title={statusText}>
+            <StateDot state={node === undefined ? taskDot(status, executing) : nodeDot(status, executing)} size={10} />
+          </span>
+          <span className={css.entityTitle}>{label}
+            {dependencies.length > 0 && <span className={css.dependencies} title={t("activity.depends", { nodes: dependencies.join(", ") })}> ← {dependencies.join(" · ")}</span>}
+          </span>
+          <span className={css.route} title={fullRoute}>
+            {agent !== undefined && <span className={css.agentLabel}>{agent}</span>}
+            {agent !== undefined && model !== undefined && <span aria-hidden>·</span>}
+            {model !== undefined && <span className={css.modelLabel}>{model}</span>}
+          </span>
+          <span className={css.elapsed}>{elapsed !== null && Number.isFinite(elapsed) ? formatDuration(elapsed, t) : "—"}</span>
+          <span className={error === null ? css.activity : css.failureCount}>
+            {todo !== null && <span className={css.progress} data-testid={TESTID.taskSteps}>{todo}</span>}
+            <span className={css.activityText}>{detail ?? statusText}</span>
+          </span>
+          <span className={css.entityChevron} aria-hidden>›</span>
+        </summary>
+        <div className={css.entityBody}>
+          <p className={css.meta}>{[statusText, fullRoute, historical ? t("activity.task.restored") : "",
+            task !== undefined && isSuspended(task) ? t("activity.task.suspended") : ""].filter(Boolean).join(" · ")}</p>
+          {node !== undefined && <p className={css.meta}>{node.prompt}</p>}
+          {task !== undefined && node !== undefined && <p className={css.meta}>{taskTitle(task)}</p>}
+          {dependencies.length > 0 && <p className={css.meta}>{t("activity.depends", { nodes: dependencies.join(", ") })}</p>}
+          {line !== null && <p className={css.detail}>{line}</p>}
+          {node !== undefined && task !== undefined && <p className={css.detail}>{taskActivityLine(task)}</p>}
+          {error !== null && <p className={css.error}>{error}</p>}
+          {result?.kind === "result" && <p className={css.result}>{result.text}</p>}
+          {phases.map((phase, index) => (
+            <div key={index} className={css.todoPhase}>
+              <span className={css.waveTitle}>{phase.name}</span>
+              {phase.tasks.map((step, stepIndex) => (
+                <div key={stepIndex} className={css.step} data-testid={TESTID.taskStep} data-status={step.status}>
+                  <StateDot state={todoDot(step.status, executing)} size={10} /><span>{step.content}</span>
+                </div>
+              ))}
             </div>
           ))}
         </div>
+      </details>
+      {children.length > 0 && (
+        <>
+          {depth >= 2 && <button className={css.childToggle} type="button" data-testid={TESTID.taskChildrenToggle}
+            aria-expanded={childrenOpen} onClick={() => setChildrenOpen(!childrenOpen)}>
+            {t(childrenOpen ? "activity.children.hide" : "activity.children.show", { count: children.length })}
+          </button>}
+          {childrenOpen && <ul className={css.children}>
+            {children.map((child) => <WorkRow key={child.task.task_id} tree={child} live={live} now={now} depth={depth + 1} />)}
+          </ul>}
+        </>
       )}
-    </div>
-  );
-}
-
-function TaskRow({ task, live, now }: { task: ActivityTask; live: boolean; now: number }) {
-  const t = useT();
-  const historical = isHistoricalTask(task);
-  const elapsed = taskElapsedMs(task, now);
-  const counters = taskCounters(task);
-  const meta = [
-    ...taskRoute(task),
-    ...(elapsed === null ? [] : [formatDuration(elapsed, t)]),
-    ...(counters.turns === null ? [] : [t("activity.task.turns", { count: counters.turns })]),
-    ...(counters.toolCalls === null ? [] : [t("activity.task.tools", { count: counters.toolCalls })]),
-  ];
-  const line = taskActivityLine(task);
-  const result = taskExcerpt(task);
-  return (
-    <li
-      className={css.task}
-      data-testid={TESTID.omoTask}
-      data-task-id={task.task_id}
-      data-status={task.status}
-      data-source={historical ? "history" : "live"}
-    >
-      <div className={css.rowMain}>
-        <span className={css.dotSlot}>
-          <StateDot state={taskDot(task.status, live && !historical && !isSuspended(task))} />
-        </span>
-        <span className={css.taskTitle} title={taskTitle(task)}>
-          {taskTitle(task)}
-        </span>
-        {historical && <span className={css.tag}>{t("activity.task.restored")}</span>}
-        {isSuspended(task) && <span className={css.tag}>{t("activity.task.suspended")}</span>}
-        <span className={css.state} data-status={task.status}>
-          {taskLabel(task.status, t)}
-        </span>
-      </div>
-      {meta.length > 0 && <p className={css.meta}>{meta.join(" · ")}</p>}
-      {line !== null && <p className={css.detail}>{line}</p>}
-      {result !== null && <p className={result.kind === "error" ? css.error : css.result}>{result.text}</p>}
     </li>
   );
 }
 
-/** Inline activity panel for one thread: its DAG runs with waves and nodes, then its child tasks. */
+function RunCard({ run, live, activity, trees, now }: {
+  run: DagRun; live: boolean; activity: Record<string, DagActivity> | undefined; trees: TaskTree[]; now: number;
+}) {
+  const t = useT();
+  const groups = useMemo(() => groupNodesByDependency(run), [run]);
+  const summary = workSummary([run], [], live);
+  const knownStatus = knownRunStatus(run.status);
+  return (
+    <details className={css.run} open={run.status !== "completed"} data-testid={TESTID.dagRun} data-run-id={run.run_id} data-status={run.status}>
+      <summary className={css.runHeader}>
+        <StateDot state={runDot(run.status, live)} size={10} />
+        <span className={css.runName}>{run.name}</span>
+        <span className={css.runCounts}>{t("activity.chipDone", summary)}{summary.failed > 0 && ` · ${t("activity.chipFailed", summary)}`}</span>
+        <span className={css.runStatus}>{knownStatus === null ? run.status : t(RUN_LABELS[knownStatus])}</span>
+      </summary>
+      <div className={css.waves}>
+        {groups.map((group) => (
+          <div key={group.index ?? "rest"} className={css.wave}>
+            <span className={css.layerTitle} title={t("activity.layer")}>{group.index === null ? "—" : group.index + 1}</span>
+            <ul className={css.list}>
+              {group.nodes.map((node) => <WorkRow key={node.id} node={node}
+                tree={trees.find((tree) => tree.task.task_id === node.task_id)} live={live} now={now}
+                activity={activity?.[node.id]} dependencies={[...new Set([...node.depends_on, ...run.edges.filter((edge) => edge.to === node.id).map((edge) => edge.from)])]} />)}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+/** Compact waves and ownership trees, with child todo checkpoints read only while the panel is inspected. */
 export function ActivityPanel({ threadId, id }: { threadId: string; id: string }) {
   const t = useT();
+  const error = useTaskWork(threadId);
   const live = useAppSelector((state) => selectThreadLiveState(state, threadId));
   const runs = useAppSelector((state) => selectDagRuns(state, threadId));
   const tasks = useAppSelector((state) => selectTasks(state, threadId));
   const isLive = live?.freshness === "live";
-  const ordered = useMemo(() => orderTasks(tasks), [tasks]);
-  const now = useNow(isLive && tasks.some((task) => task.status === "running"));
+  const trees = useMemo(() => taskForest(tasks, live?.taskWork ?? []), [tasks, live?.taskWork]);
+  const linked = new Set(runs.flatMap((run) => run.nodes.map((node) => node.task_id)));
+  const standalone = trees.filter((tree) => !linked.has(tree.task.task_id));
+  const now = useNow(isLive && (tasks.some((task) => task.status === "running") ||
+    runs.some((run) => run.status === "running") || live.taskWork.some((work) => work.task.status === "running")));
   if (live === null) return null;
-  const truncatedTasks = live.freshness === "unattached" ? undefined : live.truncatedTasks;
   return (
     <section id={id} className={css.panel} data-testid={TESTID.omoActivity} data-freshness={live.freshness} aria-label={t("activity.region")}>
       <div className={css.inner}>
-        {!isLive && (
-          <p className={css.freshness} role="status">
-            {t(live.freshness === "stale" ? "activity.freshness.stale" : "activity.freshness.unattached")}
-          </p>
-        )}
-        {runs.length > 0 && (
-          <section className={css.section}>
-            <h2 className={css.sectionTitle}>{t("activity.runs")}</h2>
-            {runs.map((run) => (
-              <RunCard
-                key={run.run_id}
-                run={run}
-                live={isLive}
-                activity={live.dagActivity[run.run_id] ?? NO_ACTIVITY}
-                tasks={live.tasks}
-              />
-            ))}
-            {live.truncatedRuns !== undefined && live.truncatedRuns > 0 && (
-              <p className={css.empty}>{t("activity.runs.truncated", { count: live.truncatedRuns })}</p>
-            )}
-          </section>
-        )}
-        {ordered.length > 0 && (
-          <section className={css.section}>
-            <h2 className={css.sectionTitle}>{t("activity.tasks")}</h2>
-            <ul className={css.list}>
-              {ordered.map((task) => (
-                <TaskRow key={task.task_id} task={task} live={isLive} now={now} />
-              ))}
-            </ul>
-            {truncatedTasks !== undefined && truncatedTasks > 0 && (
-              <p className={css.empty}>{t("activity.tasks.truncated", { count: truncatedTasks })}</p>
-            )}
-          </section>
-        )}
+        {!isLive && <p className={css.freshness} role="status">{t(live.freshness === "stale" ? "activity.freshness.stale" : "activity.freshness.unattached")}</p>}
+        {error !== null && <p className={css.error} role="status">{t("activity.children.error")} <span title={error}>{error}</span></p>}
+        <div className={css.legend} aria-hidden><span>{t("activity.column.work")}</span><span>{t("activity.column.agent")}</span><span>{t("activity.column.time")}</span><span>{t("activity.column.step")}</span></div>
+        {runs.map((run) => <RunCard key={run.run_id} run={run} live={isLive} activity={live.dagActivity[run.run_id]} trees={trees} now={now} />)}
+        {standalone.length > 0 && <section className={css.section}>
+          <h2 className={css.sectionTitle}>{t("activity.tasks")}</h2>
+          <ul className={css.list}>{standalone.map((tree) => <WorkRow key={tree.task.task_id} tree={tree} live={isLive} now={now} />)}</ul>
+        </section>}
+        {live.truncatedRuns !== undefined && live.truncatedRuns > 0 && <p className={css.empty}>{t("activity.runs.truncated", { count: live.truncatedRuns })}</p>}
+        {live.truncatedTasks !== undefined && live.truncatedTasks > 0 && <p className={css.empty}>{t("activity.tasks.truncated", { count: live.truncatedTasks })}</p>}
       </div>
     </section>
   );

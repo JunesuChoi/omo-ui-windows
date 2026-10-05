@@ -24,6 +24,16 @@ describe("PreferencesStore", () => {
     expect(new PreferencesStore(dir).get()).toEqual(DEFAULT_PREFERENCES);
   });
 
+  it("defaults auto-update on for old preferences and persists only boolean choices", async () => {
+    await writeFile(path.join(dir, "preferences.json"), JSON.stringify({ theme: "dark" }));
+    const store = new PreferencesStore(dir);
+    expect(store.get().omoAutoUpdate).toBe(true);
+    expect(store.set({ omoAutoUpdate: false }).omoAutoUpdate).toBe(false);
+    expect(store.set({ omoAutoUpdate: "true" }).omoAutoUpdate).toBe(false);
+    expect(new PreferencesStore(dir).get().omoAutoUpdate).toBe(false);
+    expect(store.set({ omoAutoUpdate: true }).omoAutoUpdate).toBe(true);
+  });
+
   it("keeps the current value for invalid fields", () => {
     const store = new PreferencesStore(dir);
     store.set({ theme: "dark", modelId: "gpt" });

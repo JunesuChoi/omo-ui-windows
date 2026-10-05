@@ -96,6 +96,8 @@ export async function launchApp(options: LaunchOptions): Promise<LaunchedApp> {
   }
 
   env["OMO_UI_IPHONE_BRIDGE"] = "0";
+  // A test must never replace the user's installed omo; the update spec drives a fake launcher instead.
+  if (options.omo === "installed") env[ENV.omoAutoUpdate] = "0";
   Object.assign(env, options.extraEnv ?? {});
 
   const removeCreated = (): void => {

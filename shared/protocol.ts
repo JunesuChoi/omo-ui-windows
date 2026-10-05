@@ -311,7 +311,20 @@ export interface McpServerStatus {
   status?: string;
 }
 
+/** A secret-free descriptor of one stored provider account; `name` is the immutable id, `displayName` a label. */
+export interface ProviderAccount {
+  name: string;
+  source: string;
+  blocked: boolean;
+  pinned: boolean;
+  displayName?: string;
+}
+
 export interface ClientRequestMap {
+  "account/providerAccounts/read": { params: { provider: string }; result: { provider: string; accounts: ProviderAccount[] } };
+  /** `name: null` clears the pin. */
+  "account/providerAccounts/pin": { params: { provider: string; name: string | null }; result: unknown };
+  "account/providerAccounts/remove": { params: { provider: string; name: string }; result: unknown };
   "mcpServerStatus/list": {
     params: { threadId?: string; detail?: string; cursor?: string | null; limit?: number };
     result: { data: McpServerStatus[]; nextCursor: string | null };
@@ -367,6 +380,9 @@ export type ClientResult<M extends ClientMethod> = ClientRequestMap[M]["result"]
 
 /** Methods the renderer may call through the bridge; the main process rejects anything else. */
 export const CLIENT_METHODS = [
+  "account/providerAccounts/read",
+  "account/providerAccounts/pin",
+  "account/providerAccounts/remove",
   "mcpServerStatus/list",
   "thread/goal/get",
   "extension_request",

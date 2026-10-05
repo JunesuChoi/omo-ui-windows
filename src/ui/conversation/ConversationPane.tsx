@@ -21,7 +21,7 @@ import { ConversationHeader } from "./ConversationHeader";
 import { EmptyHero } from "./EmptyHero";
 import { QuestionCard } from "./QuestionCard";
 import { RenderBoundary } from "./RenderBoundary";
-import { TurnView } from "./TurnView";
+import { TurnView, type BranchContext } from "./TurnView";
 import { userMessageParts, UserBubble } from "./UserBubble";
 import { useStickToBottom } from "./use-stick-to-bottom";
 import { durationParts, QUIET_AFTER_MS, workingStatus } from "./working-status";
@@ -115,6 +115,7 @@ function PendingRequestCard({
 
 function Transcript({ threadId, cwd, turnActive }: { threadId: string; cwd: string | null; turnActive: boolean }) {
   const t = useT();
+  const hasPath = useAppSelector((state) => (state.threads[threadId]?.path ?? null) !== null);
   const conversation = useAppSelector(selectActiveConversation);
   const pending = useAppSelector((state) => selectPendingRequestsForThread(state, threadId));
   const scroll = useStickToBottom();
@@ -127,6 +128,8 @@ function Transcript({ threadId, cwd, turnActive }: { threadId: string; cwd: stri
   const streaming = activeTurn?.items.some((entry) => entry.streaming) ?? false;
   const showWorking = turnActive && !streaming && pending.length === 0;
   const historyState = conversation?.historyState ?? "idle";
+  const branchIdle = !turnActive && (conversation?.pendingUserMessages.length ?? 0) === 0;
+  const branch = useMemo<BranchContext | null>(() => (hasPath ? { threadId, idle: branchIdle } : null), [hasPath, threadId, branchIdle]);
   const empty =
     (historyState === "idle" || historyState === "loaded") &&
     turns.length === 0 &&
@@ -155,8 +158,8 @@ function Transcript({ threadId, cwd, turnActive }: { threadId: string; cwd: stri
           {historyState === "loading" && <HistorySkeleton />}
           {historyState === "error" && <HistoryError threadId={threadId} message={conversation?.historyError ?? null} />}
           <MarkdownDelegateProvider openExternalLink={openExternalLink} openFile={openFile}>
-            {turns.map((turn) => (
-              <TurnView key={turn.id} turn={turn} cwd={cwd} />
+            {turns.map((turn, index) => (
+              <TurnView key={turn.id} turn={turn} cwd={cwd} branch={branch} last={index === turns.length - 1} />
             ))}
           </MarkdownDelegateProvider>
           {conversation?.pendingUserMessages.map((message) => (

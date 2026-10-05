@@ -7,6 +7,7 @@ const LOCALES: readonly LocalePreference[] = ["system", "en", "ko"];
 const MAX_RECENT = 10;
 
 export const DEFAULT_PREFERENCES: Preferences = {
+  omoAutoUpdate: true,
   theme: "system",
   locale: "system",
   lastWorkspace: null,
@@ -41,6 +42,7 @@ function merge(current: Preferences, patch: unknown): Preferences {
   if (!isRecord(patch)) return current;
   const has = (key: keyof Preferences): boolean => key in patch;
   return {
+    omoAutoUpdate: typeof patch["omoAutoUpdate"] === "boolean" ? patch["omoAutoUpdate"] : current.omoAutoUpdate ?? true,
     theme: has("theme") ? pick(THEMES, patch["theme"], current.theme) : current.theme,
     locale: has("locale") ? pick(LOCALES, patch["locale"], current.locale) : current.locale,
     lastWorkspace: has("lastWorkspace") ? nullableString(patch["lastWorkspace"], current.lastWorkspace) : current.lastWorkspace,

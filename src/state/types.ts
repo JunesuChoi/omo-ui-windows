@@ -1,4 +1,4 @@
-import type { BridgeStatus, HistoricalTask, HistoryResult, HistoryTurn } from "../../shared/ipc";
+import type { BridgeStatus, HistoricalTask, HistoryResult, HistoryTurn, TaskWork } from "../../shared/ipc";
 import type { DagActivity, DagHeartbeat, DagRun, LiveTask, TodoPhase, WireGoal } from "../../shared/protocol";
 import type {
   CommandApprovalParams,
@@ -86,6 +86,7 @@ export interface ThreadLiveState {
   taskOrder: string[];
   truncatedTasks?: number;
   historicalTasks: HistoricalTask[];
+  taskWork: TaskWork[];
   dagActivity: Record<string, Record<string, DagActivity>>;
   heartbeat: DagHeartbeat | null;
   goal: WireGoal | null | undefined;
@@ -103,7 +104,7 @@ export type PendingRequest =
   | { kind: "userInput"; id: RequestId; threadId: string; params: UserInputParams; receivedAtMs: number };
 
 /** Notices the UI translates by code; a notice without a code shows its message as-is (omo's own error text). */
-export type NoticeCode = "noActiveThread" | "steered";
+export type NoticeCode = "noActiveThread" | "steered" | "branchBusy";
 
 export interface Notice {
   id: string;
@@ -184,6 +185,7 @@ export interface AppState {
 }
 
 export type AppEvent =
+  | { type: "taskWork/loaded"; threadId: string; work: TaskWork[]; generation: number }
   | { type: "mcp/updated"; mcp: AppState["mcp"] }
   | { type: "bridge/status"; status: BridgeStatus }
   | { type: "rpc/notification"; notification: RpcNotification; receivedAtMs: number }

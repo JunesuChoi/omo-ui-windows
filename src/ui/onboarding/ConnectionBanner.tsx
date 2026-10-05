@@ -23,6 +23,9 @@ function bannerText(state: VisibleState, bridge: BridgeStatus, t: Translate): st
   switch (state) {
     case "locating":
     case "starting":
+      // The launch-time update runs between locating omo and starting it.
+      if (bridge.update?.state === "checking") return t("shell.banner.checkingUpdate");
+      if (bridge.update?.state === "installing") return t("shell.banner.installingUpdate");
       return t("shell.banner.starting");
     case "restarting":
       return t("shell.banner.reconnecting", { attempt: bridge.restartAttempt });

@@ -7,6 +7,8 @@ import { locateOmo } from "./locate";
 import type { LocateOptions, LocateResult } from "./locate";
 import { resolveLoginShellEnv, scrubChildEnv } from "./shell-env";
 import type { LoginShellEnv, ResolveLoginShellEnvOptions } from "./shell-env";
+import { autoUpdateOmo } from "./updater";
+import type { AutoUpdateOptions } from "./updater";
 
 /** The AppServerClient surface the supervisor uses; tests inject fakes through createClient. */
 export type SupervisedClient = Pick<
@@ -22,6 +24,8 @@ export interface OmoSupervisorOptions {
   locate?: (options: LocateOptions) => Promise<LocateResult>;
   resolveEnv?: (options: ResolveLoginShellEnvOptions) => Promise<LoginShellEnv>;
   createClient?: (options: AppServerClientOptions) => SupervisedClient;
+  /** When supplied, updates once per app lifetime before the first app-server launch. */
+  autoUpdate?: AutoUpdateOptions;
 }
 
 export type SupervisorDiagnostics = Pick<Diagnostics, "omo" | "childPid" | "childPath" | "loginShellEnv">;
@@ -51,6 +55,8 @@ export class OmoSupervisor {
   private childPath: string | null = null;
   private generation = 0;
   private stopped = false;
+  private readonly updateAbort = new AbortController();
+  private updatePromise: Promise<OmoBinary> | null = null;
   private restartTimer: NodeJS.Timeout | null = null;
   private readonly statusListeners = new Set<(status: BridgeStatus) => void>();
   private readonly notificationListeners = new Set<(notification: RpcNotification) => void>();
@@ -92,6 +98,7 @@ export class OmoSupervisor {
   /** Stops the child for good; later exits never schedule restarts. */
   async stop(): Promise<void> {
     this.stopped = true;
+    this.updateAbort.abort();
     this.generation++;
     this.cancelRestart();
     const client = this.client;
@@ -175,7 +182,16 @@ export class OmoSupervisor {
       this.setStatus({ state: "not-found", omo: null, userAgent: null, message: `omo was not found. Tried: ${tried || "nothing"}` });
       return;
     }
-    await this.launch(generation, located.binary, login);
+    let binary = located.binary;
+    if (this.options.autoUpdate && !this.updateAbort.signal.aborted) {
+      this.updatePromise ??= autoUpdateOmo(binary, scrubChildEnv(login.env), this.options.autoUpdate, this.updateAbort.signal,
+        (update) => { if (!this.stopped) this.setStatus({ update }); });
+      const updated = await this.updatePromise;
+      // An explicit restart may locate a different override; do not substitute the old path.
+      if (updated.path === binary.path && this.status.update?.state === "updated" && binary.version === this.status.update.from) binary = updated;
+    }
+    if (generation !== this.generation) return;
+    await this.launch(generation, binary, login);
   }
 
   private async launch(generation: number, binary: OmoBinary, login: LoginShellEnv): Promise<void> {

@@ -17,6 +17,7 @@ export const messages = {
     "common.retry": "Retry",
     "notice.noActiveThread": "Open or start a session before sending a message.",
     "notice.steered": "Sent to the running turn.",
+    "notice.branchBusy": "Wait for the running turn to finish, or stop it, before editing or regenerating.",
   },
   ko: {
     "app.name": "OmO UI",
@@ -36,5 +37,6 @@ export const messages = {
     "common.retry": "다시 시도",
     "notice.noActiveThread": "메시지를 보내기 전에 세션을 열거나 새로 시작하세요.",
     "notice.steered": "실행 중인 턴에 전달했습니다.",
+    "notice.branchBusy": "편집하거나 다시 생성하려면 실행 중인 턴이 끝나거나 멈출 때까지 기다리세요.",
   },
 } as const;
