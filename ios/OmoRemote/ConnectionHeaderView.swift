@@ -5,7 +5,7 @@ import OmoKit
     @EnvironmentObject private var model: RemoteModel
     var body: some View {
         HStack {
-            Label(model.macName ?? "OmO", systemImage: "desktopcomputer")
+            Label(model.macName ?? model.trustedMacName ?? "OmO", systemImage: "desktopcomputer")
             Spacer()
             if model.ready {
                 Text(LocalizedStringKey("state_" + model.bridgeState))
@@ -19,5 +19,14 @@ import OmoKit
             }
         }
         .accessibilityElement(children: .combine)
+        .alert(String(localized: "trust_mac_title"), isPresented: Binding(
+            get: { model.pendingMacName != nil },
+            set: { if !$0 { model.resolveMacTrust(approve: false) } }
+        )) {
+            Button(String(localized: "trust_mac_accept")) { model.resolveMacTrust(approve: true) }
+            Button(String(localized: "trust_mac_not_now"), role: .cancel) { model.resolveMacTrust(approve: false) }
+        } message: {
+            Text(model.pendingMacName ?? "")
+        }
     }
 }

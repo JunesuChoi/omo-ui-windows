@@ -4,6 +4,8 @@ import OmoKit
 @MainActor final class RemoteModel: ObservableObject {
     @Published var store = ConversationStore()
     @Published var macName: String?
+    @Published var pendingMacName: String?
+    var trustedMacName: String? { transport.trustedMacName }
     @Published var bridgeState = "waiting"
     @Published var errorMessage: String?
     @Published var busyThreads: Set<String> = []
@@ -19,6 +21,7 @@ import OmoKit
     var ready: Bool { macName != nil && bridgeState == "connected" }
 
     init() {
+        transport.onTrustRequest = { [weak self] in self?.pendingMacName = $0 }
         rpc.onEvent = { [weak self] in self?.receive($0) }
         rpc.onDisconnect = { [weak self] error in
             guard let self else { return }
@@ -42,7 +45,7 @@ import OmoKit
     }
     private func receive(_ message: BridgeMessage) {
         switch message {
-        case let .hello(version, name, state):
+        case let .hello(version, name, state, _):
             guard version == 1 else {
                 errorMessage = String(localized: "unsupported_bridge")
                 stop(); return
@@ -63,6 +66,7 @@ import OmoKit
         default: break
         }
     }
+    func resolveMacTrust(approve: Bool) { transport.resolveTrust(approve: approve) }
     private func scheduleRefresh() {
         guard refreshTask == nil else { return }
         let epoch = generation

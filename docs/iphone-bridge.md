@@ -24,7 +24,8 @@ A frame that is not a JSON object closes the connection. A JSON object whose `ty
 
 | Direction | Frame |
 |---|---|
-| Mac → phone | `{"type":"hello","version":1,"macName":string,"bridge":{"state":string}}` first, after the stream opens |
+| Mac → phone | `{"type":"hello","version":1,"macName":string,"token":string,"bridge":{"state":string}}` first, after the stream opens |
+| phone → Mac | `{"type":"trusted"}` after authentication; the Mac replays current bridge status and pending server requests |
 | Mac → phone | `{"type":"bridgeStatus","state":"connected"\|"starting"\|"restarting"\|"failed"\|...}` when omo's state changes |
 | phone → Mac | `{"type":"rpc","id":number,"method":string,"params":object}` |
 | Mac → phone | `{"type":"rpcResult","id":number,"result":any}` or `{"type":"rpcError","id":number,"error":{"code":number,"message":string}}` |
@@ -32,6 +33,18 @@ A frame that is not a JSON object closes the connection. A JSON object whose `ty
 | Mac → phone | `{"type":"serverRequest","id":number\|string,"method":string,"params":object}` for every omo server request (approvals, questions); requests still waiting when the phone connects are sent right after `bridgeStatus` |
 | phone → Mac | `{"type":"serverAnswer","id":number\|string,"result":object}` answers the server request with the same `id`; the Mac passes `result` to omo unchanged |
 | either | `{"type":"ping","t":number}` / `{"type":"pong","t":number}` every 10 s; a side that hears nothing for 30 s closes the stream |
+
+## Mac trust
+
+The Mac generates a random 32-byte token once and sends its 64-character lowercase hexadecimal encoding in every `hello`. It persists the token in `iphone-token.json` under Electron's `userData` directory with mode `0600`. Invalid stored tokens fail startup rather than changing the installation's identity.
+
+The phone saves the first valid version-1 hello's `(macName, token)` pair in UserDefaults. A later hello with that token authenticates the stream and updates the displayed Mac name. A different token leaves the stream unauthenticated and asks “Trust this Mac?” with the candidate Mac's name. Trust replaces the saved pair; Not now closes the candidate stream. Missing or malformed tokens cannot establish trust.
+
+Before authentication, the phone drops every frame except `hello`, `ping`, and `pong`, and sends no RPC or server answer on that stream. A new connection cannot replace a live authenticated connection until its hello authenticates or the user explicitly trusts it. The phone header names the trusted Mac even while disconnected.
+
+The phone confirms authentication with `trusted`. The Mac then replays current bridge status and pending server requests, including requests the phone dropped while waiting for trust approval.
+
+Mac Settings > iPhone shows each attached device's serial and whether a `serverRequest` forwarded to that connected phone is still unanswered. Answering, `serverRequest/resolved`, and omo leaving its connected state clear the pending status.
 
 ## Allowed methods
 

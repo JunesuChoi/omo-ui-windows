@@ -39,7 +39,8 @@ public struct RPCError: Codable, Error, Equatable, Sendable, LocalizedError {
 }
 
 public enum BridgeMessage: Codable, Equatable, Sendable {
-    case hello(version: Int, macName: String, state: String)
+    case hello(version: Int, macName: String, state: String, token: String = "")
+    case trusted
     case bridgeStatus(String)
     case rpc(id: Int, method: String, params: JSONValue)
     case rpcResult(id: Int, result: JSONValue)
@@ -64,7 +65,8 @@ public enum BridgeMessage: Codable, Equatable, Sendable {
             return Int(n)
         }
         switch v["type"].string {
-        case "hello": self = .hello(version: try integer("version"), macName: try required(v["macName"].string), state: try required(v["bridge"]["state"].string))
+        case "hello": self = .hello(version: try integer("version"), macName: try required(v["macName"].string), state: try required(v["bridge"]["state"].string), token: try required(v["token"].string))
+        case "trusted": self = .trusted
         case "bridgeStatus": self = .bridgeStatus(try required(v["state"].string))
         case "rpc": self = .rpc(id: try integer("id"), method: try required(v["method"].string), params: v["params"])
         case "rpcResult": self = .rpcResult(id: try integer("id"), result: v["result"])
@@ -82,7 +84,8 @@ public enum BridgeMessage: Codable, Equatable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var fields: [String: JSONValue]
         switch self {
-        case let .hello(version, name, state): fields = ["type": .string("hello"), "version": .number(Double(version)), "macName": .string(name), "bridge": .object(["state": .string(state)])]
+        case let .hello(version, name, state, token): fields = ["type": .string("hello"), "version": .number(Double(version)), "macName": .string(name), "token": .string(token), "bridge": .object(["state": .string(state)])]
+        case .trusted: fields = ["type": .string("trusted")]
         case .bridgeStatus(let state): fields = ["type": .string("bridgeStatus"), "state": .string(state)]
         case let .rpc(id, method, params): fields = ["type": .string("rpc"), "id": .number(Double(id)), "method": .string(method), "params": params]
         case let .rpcResult(id, result): fields = ["type": .string("rpcResult"), "id": .number(Double(id)), "result": result]

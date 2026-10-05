@@ -135,7 +135,7 @@ export interface OpenTarget {
 export interface IphoneStatus {
   enabled: boolean;
   state: "searching" | "connecting" | "connected";
-  devices: { id: number; name: string; serial: string; state: "connecting" | "connected" }[];
+  devices: { id: number; name: string; serial: string; state: "connecting" | "connected"; pendingApproval: boolean }[];
 }
 
 export interface OmoBridgeApi {

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, shell } from "electron";
 import { ENV, IPC } from "../shared/ipc";
 import type { MenuCommand } from "../shared/ipc";
-import { IphoneBridge } from "./iphone/bridge";
+import { IphoneBridge, loadIphoneToken } from "./iphone/bridge";
 import { registerIpc } from "./ipc";
 import { installApplicationMenu } from "./menu";
 import { OmoSupervisor } from "./omo/supervisor";
@@ -96,7 +96,7 @@ function run(): void {
   const homeDir = os.homedir();
   const supervisor = new OmoSupervisor({ homeDir, baseEnv: process.env, clientVersion: app.getVersion() });
 
-  const iphone = new IphoneBridge(supervisor);
+  const iphone = new IphoneBridge(supervisor, undefined, undefined, loadIphoneToken(app.getPath("userData")));
 
   app.on("second-instance", () => {
     if (app.isReady()) focusWindow();

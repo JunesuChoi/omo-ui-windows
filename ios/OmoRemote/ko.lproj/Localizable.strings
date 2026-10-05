@@ -112,3 +112,6 @@
 "skills" = "스킬";
 "copy" = "복사";
 "copied" = "복사됨";
+"trust_mac_title" = "이 Mac을 신뢰할까요?";
+"trust_mac_accept" = "신뢰";
+"trust_mac_not_now" = "나중에";

@@ -25,6 +25,7 @@ export function IphoneSection() {
       {status?.devices.map((device) => <dl className={css.facts} key={device.id}>
         <dt>{t("shell.settings.iphone.device")}</dt><dd>{device.name} · {device.serial}</dd>
         <dt>{t("shell.settings.nav.iphone")}</dt><dd>{t(`shell.settings.iphone.${device.state}`)}</dd>
+        <dt>{t("shell.settings.iphone.approval")}</dt><dd data-pending-approval={device.pendingApproval}>{t(device.pendingApproval ? "shell.settings.iphone.approvalPending" : "shell.settings.iphone.approvalNone")}</dd>
       </dl>)}
     </div></div>
   </section>;

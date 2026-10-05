@@ -112,3 +112,6 @@
 "skills" = "Skills";
 "copy" = "Copy";
 "copied" = "Copied";
+"trust_mac_title" = "Trust this Mac?";
+"trust_mac_accept" = "Trust";
+"trust_mac_not_now" = "Not now";

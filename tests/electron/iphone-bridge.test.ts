@@ -1,8 +1,11 @@
 import { EventEmitter } from "node:events";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import type { Socket } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OMO_INSTALL_COMMAND, type BridgeStatus } from "../../shared/ipc";
-import { IphoneBridge, FrameDecoder, allowedMethod, encodeFrame } from "../../electron/iphone/bridge";
+import { IphoneBridge, FrameDecoder, allowedMethod, encodeFrame, loadIphoneToken } from "../../electron/iphone/bridge";
 import { Usbmux, type UsbDevice } from "../../electron/iphone/usbmux";
 import { RpcRequestError } from "../../electron/omo/app-server-client";
 import type { OmoSupervisor } from "../../electron/omo/supervisor";
@@ -48,6 +51,7 @@ describe("phone bridge lifecycle", () => {
     try {
       await attach(h);
       expect(h.socket.frames[0]).toMatchObject({ type: "hello", version: 1, bridge: { state: "connected" } });
+      expect(h.socket.frames[0]?.["token"]).toMatch(/^[0-9a-f]{64}$/);
       expect(h.socket.frames[1]).toEqual({ type: "bridgeStatus", state: "connected" });
       h.change({ ...status, state: "restarting" });
       h.notify({ method: "turn/completed", params: {} });
@@ -127,10 +131,12 @@ describe("phone bridge server requests", () => {
     try {
       await attach(h);
       h.ask(approval);
+      expect(h.bridge.getStatus().devices[0]?.pendingApproval).toBe(true);
       expect(h.socket.frames.at(-1)).toEqual({ type: "serverRequest", ...approval });
       h.socket.send({ type: "serverAnswer", id: "approval-1", result: { decision: "accept" } });
       // The bridge hands the answer to omo synchronously while handling the frame.
       expect(h.respond).toHaveBeenCalledWith("approval-1", { decision: "accept" });
+      expect(h.bridge.getStatus().devices[0]?.pendingApproval).toBe(false);
       h.socket.send({ type: "serverAnswer", id: "approval-1", result: { decision: "decline" } });
       h.socket.send({ type: "serverAnswer", id: 99, result: { decision: "accept" } });
       expect(h.respond).toHaveBeenCalledTimes(1);
@@ -145,12 +151,42 @@ describe("phone bridge server requests", () => {
       h.notify({ method: "serverRequest/resolved", params: { threadId: "t", requestId: 7 } });
       await attach(h);
       expect(h.socket.frames.slice(2)).toEqual([{ type: "serverRequest", ...approval }]);
+      expect(h.bridge.getStatus().devices[0]?.pendingApproval).toBe(true);
+      h.notify({ method: "serverRequest/resolved", params: { threadId: "t", requestId: "approval-1" } });
+      expect(h.bridge.getStatus().devices[0]?.pendingApproval).toBe(false);
       h.socket.send({ type: "serverAnswer", id: 7, result: { answers: {} } });
       h.socket.send({ type: "serverAnswer", id: "approval-1", result: "accept" });
       expect(h.respond).not.toHaveBeenCalled();
+      h.ask(approval);
       h.change({ ...status, state: "restarting" });
+      expect(h.bridge.getStatus().devices[0]?.pendingApproval).toBe(false);
       h.socket.send({ type: "serverAnswer", id: "approval-1", result: { decision: "accept" } });
       expect(h.respond).not.toHaveBeenCalled();
     } finally { h.bridge.stop(); }
+  });
+  it("replays requests still pending when the phone confirms trust", async () => {
+    const h = harness(); h.bridge.start();
+    try {
+      await attach(h);
+      h.ask(approval);
+      h.ask({ id: 7, method: "item/tool/requestUserInput", params: { questions: [] } });
+      h.notify({ method: "serverRequest/resolved", params: { threadId: "t", requestId: 7 } });
+      const mark = h.socket.frames.length;
+      h.socket.send({ type: "trusted" });
+      expect(h.socket.frames.slice(mark)).toEqual([{ type: "bridgeStatus", state: "connected" }, { type: "serverRequest", ...approval }]);
+    } finally { h.bridge.stop(); }
+  });
+});
+
+describe("installation token", () => {
+  it("persists a private random token across store loads", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "iphone-token-"));
+    try {
+      const token = loadIphoneToken(dir);
+      expect(token).toMatch(/^[0-9a-f]{64}$/);
+      expect(loadIphoneToken(dir)).toBe(token);
+      expect(JSON.parse(readFileSync(path.join(dir, "iphone-token.json"), "utf8"))).toEqual({ token });
+      expect(statSync(path.join(dir, "iphone-token.json")).mode & 0o777).toBe(0o600);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
