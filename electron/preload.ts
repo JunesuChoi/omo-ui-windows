@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { IpcRendererEvent } from "electron";
 import type {
   BridgeStatus,
@@ -30,6 +30,7 @@ const CHANNELS = {
   installLog: "omo:install-log",
   loadHistory: "history:load",
   pickDirectory: "dialog:pick-directory",
+  pickImages: "dialog:pick-images",
   diagnostics: "app:diagnostics",
   getPreferences: "prefs:get",
   setPreferences: "prefs:set",
@@ -75,6 +76,8 @@ const api = {
   loadHistory: (sessionPath: string): Promise<HistoryResult> => invoke(CHANNELS.loadHistory, sessionPath),
   pickDirectory: (defaultPath?: string | null): Promise<string | null> =>
     invoke(CHANNELS.pickDirectory, defaultPath ?? null),
+  pickImages: (): Promise<string[]> => invoke(CHANNELS.pickImages),
+  imageFilePath: (file: File): string => webUtils.getPathForFile(file),
   getDiagnostics: (): Promise<Diagnostics> => invoke(CHANNELS.diagnostics),
   getPreferences: (): Promise<Preferences> => invoke(CHANNELS.getPreferences),
   setPreferences: (patch: Partial<Preferences>): Promise<Preferences> => invoke(CHANNELS.setPreferences, patch),

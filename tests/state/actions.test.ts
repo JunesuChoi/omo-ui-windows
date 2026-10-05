@@ -154,6 +154,8 @@ class FakeBridge implements OmoBridgeApi {
   async pickDirectory(): Promise<string | null> {
     return null;
   }
+  async pickImages(): Promise<string[]> { return []; }
+  imageFilePath(): string { return ""; }
   async getDiagnostics(): Promise<never> {
     throw new Error("not used");
   }

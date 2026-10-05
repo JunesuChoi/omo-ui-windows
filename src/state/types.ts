@@ -54,9 +54,12 @@ export interface ConversationTurn {
   origin: "live" | "history";
 }
 
+export type ImageInput = Extract<import("../../shared/protocol").UserInput, { type: "image" | "localImage" }>;
+
 export interface PendingUserMessage {
   clientId: string;
   text: string;
+  images?: readonly ImageInput[];
   sentAtMs: number;
 }
 
@@ -198,7 +201,7 @@ export type AppEvent =
   | { type: "turn/errorReconciled"; threadId: string; turn: ConversationTurn; error: TurnError }
   /** omo no longer runs the thread's active turn (a steer or interrupt was rejected); the turn ends as `status` locally. */
   | { type: "turn/settled"; threadId: string; status: "completed" | "interrupted"; settledAtMs: number }
-  | { type: "user/messageSent"; threadId: string; clientId: string; text: string; sentAtMs: number }
+  | { type: "user/messageSent"; threadId: string; clientId: string; text: string; images?: readonly ImageInput[]; sentAtMs: number }
   | { type: "user/messageFailed"; threadId: string; clientId: string; message: string }
   | { type: "composer/modelSelected"; modelId: string | null; effort: ReasoningEffort | null }
   | { type: "notice/pushed"; notice: Notice }

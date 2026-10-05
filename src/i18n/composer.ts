@@ -1,6 +1,13 @@
 export const messages = {
   en: {
     "composer.inputLabel": "Message",
+    "composer.images.attach": "Attach images",
+    "composer.images.preview": "Image {number}",
+    "composer.images.remove": "Remove image {number}",
+    "composer.images.drop": "Drop images to attach",
+    "composer.images.limit": "Up to 10 images per message",
+    "composer.images.rejected": "Only PNG, JPG, GIF and WebP images are supported",
+    "composer.images.error": "Could not attach images: {message}",
     "composer.placeholder.hero": "Ask omo to do anything in {workspace}",
     "composer.placeholder.heroNoWorkspace": "Ask omo to do anything",
     "composer.placeholder.idle": "Message omo",
@@ -51,6 +58,13 @@ export const messages = {
   },
   ko: {
     "composer.inputLabel": "메시지",
+    "composer.images.attach": "이미지 첨부",
+    "composer.images.preview": "이미지 {number}",
+    "composer.images.remove": "이미지 {number} 제거",
+    "composer.images.drop": "이미지를 놓아 첨부하세요",
+    "composer.images.limit": "메시지당 이미지는 최대 10개입니다",
+    "composer.images.rejected": "PNG, JPG, GIF, WebP 이미지만 지원합니다",
+    "composer.images.error": "이미지를 첨부하지 못했습니다: {message}",
     "composer.placeholder.hero": "{workspace}에서 omo에게 무엇이든 요청하세요",
     "composer.placeholder.heroNoWorkspace": "omo에게 무엇이든 요청하세요",
     "composer.placeholder.idle": "omo에게 메시지 보내기",
