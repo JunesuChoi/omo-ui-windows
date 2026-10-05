@@ -33,7 +33,7 @@ sudo_cmd=""
 [ -w "$APP_DIR" ] || sudo_cmd="sudo"
 $sudo_cmd rm -rf "${APP_DIR:?}/${APP_NAME}"
 $sudo_cmd ditto "$tmp/x/${APP_NAME}" "${APP_DIR}/${APP_NAME}"
-$sudo_cmd xattr -dr com.apple.quarantine "${APP_DIR}/${APP_NAME}" 2>/dev/null || true
+$sudo_cmd /usr/bin/xattr -r -d com.apple.quarantine "${APP_DIR}/${APP_NAME}" 2>/dev/null || true
 
 printf 'Installed %s/%s\n' "$APP_DIR" "$APP_NAME"
 command -v omo >/dev/null 2>&1 || printf 'omo is not installed yet; OmO UI can install it on first launch, or run: curl -fsSL https://get.omo.dev/install.sh | bash\n'
