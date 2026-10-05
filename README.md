@@ -40,6 +40,8 @@ OmO UI runs the omo you installed with `curl -fsSL https://get.omo.dev/install.s
 - **Installs omo for you**: if omo is missing, the first screen offers to run the official installer.
 - **Light, dark, English and Korean.**
 
+[OmO for iPhone](ios/README.md) is the native SwiftUI companion: connect your iPhone to the Mac with a USB cable to browse sessions, stream replies, send or steer omo, and stop a turn. The Mac keeps running omo and holding its credentials; the phone communicates through Apple's USB multiplexer, not Wi-Fi or Bluetooth. See the iOS guide for building, signing, and installing the app.
+
 ## Feature tour
 
 The tour below was captured from the built app by `npm run screenshots`, which plays scripted demo sessions through the repository's fake omo (`tests/fixtures/fake-omo.mjs`): every screen is the real interface, and none shows a real person's sessions. The last screenshot is the same app on the installed omo with a real model.
