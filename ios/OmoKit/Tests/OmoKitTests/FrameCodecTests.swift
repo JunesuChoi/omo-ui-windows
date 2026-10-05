@@ -41,10 +41,24 @@ final class FrameCodecTests: XCTestCase {
             .hello(version: 2, macName: "Mac", state: "starting"), .bridgeStatus("connected"),
             .rpc(id: 3, method: "thread/list", params: .object([:])), .rpcResult(id: 3, result: .array([.bool(true), .null])),
             .rpcError(id: 4, error: .init(code: -32601, message: "Unsupported")),
+            .serverRequest(id: .string("request-1"), method: "thread/list", params: .object(["limit": .number(10)])),
+            .serverAnswer(id: .number(42), result: .object(["ok": .bool(true)])),
             .notification(method: "turn/started", params: .object([:])), .ping(10), .pong(10)
         ]
         var codec = FrameCodec()
         XCTAssertEqual(try codec.append(messages.reduce(Data()) { try $0 + FrameCodec.encode($1) }), messages)
+    }
+    func testServerRequestDeliveredInTwoChunks() throws {
+        let message = BridgeMessage.serverRequest(id: .number(7), method: "thread/list", params: .object([:]))
+        let frame = try FrameCodec.encode(message)
+        var codec = FrameCodec()
+        let split = frame.count / 2
+        XCTAssertEqual(try codec.append(Data(frame.prefix(split))), [])
+        XCTAssertEqual(try codec.append(Data(frame.dropFirst(split))), [message])
+    }
+    func testNineMiBLengthRejected() {
+        var codec = FrameCodec()
+        XCTAssertThrowsError(try codec.append(Data([0, 128, 0, 0]))) { XCTAssertEqual($0 as? FrameCodec.Failure, .oversizedFrame) }
     }
     func testUnknownFrameIgnoredByClientContract() throws {
         let body = Data(#"{"type":"future","extra":42}"#.utf8)

@@ -27,6 +27,8 @@ public enum JSONValue: Codable, Equatable, Sendable {
     public var string: String? { if case .string(let v) = self { return v }; return nil }
     public var array: [JSONValue] { if case .array(let v) = self { return v }; return [] }
     public var number: Double? { if case .number(let v) = self { return v }; return nil }
+    fileprivate var isID: Bool { if case .string = self { return true }; if case .number(let value) = self { return value.isFinite && value.rounded() == value }; return false }
+    fileprivate var isObject: Bool { if case .object = self { return true }; return false }
 }
 
 public struct RPCError: Codable, Error, Equatable, Sendable, LocalizedError {
@@ -41,6 +43,8 @@ public enum BridgeMessage: Codable, Equatable, Sendable {
     case bridgeStatus(String)
     case rpc(id: Int, method: String, params: JSONValue)
     case rpcResult(id: Int, result: JSONValue)
+    case serverRequest(id: JSONValue, method: String, params: JSONValue)
+    case serverAnswer(id: JSONValue, result: JSONValue)
     case rpcError(id: Int, error: RPCError)
     case notification(method: String, params: JSONValue)
     case ping(Double), pong(Double)
@@ -64,6 +68,8 @@ public enum BridgeMessage: Codable, Equatable, Sendable {
         case "bridgeStatus": self = .bridgeStatus(try required(v["state"].string))
         case "rpc": self = .rpc(id: try integer("id"), method: try required(v["method"].string), params: v["params"])
         case "rpcResult": self = .rpcResult(id: try integer("id"), result: v["result"])
+        case "serverRequest": self = .serverRequest(id: try required(v["id"].isID ? v["id"] : nil), method: try required(v["method"].string), params: try required(v["params"].isObject ? v["params"] : nil))
+        case "serverAnswer": self = .serverAnswer(id: try required(v["id"].isID ? v["id"] : nil), result: try required(v["result"].isObject ? v["result"] : nil))
         case "rpcError":
             let error = try JSONDecoder().decode(RPCError.self, from: JSONEncoder().encode(v["error"]))
             self = .rpcError(id: try integer("id"), error: error)
@@ -80,6 +86,8 @@ public enum BridgeMessage: Codable, Equatable, Sendable {
         case .bridgeStatus(let state): fields = ["type": .string("bridgeStatus"), "state": .string(state)]
         case let .rpc(id, method, params): fields = ["type": .string("rpc"), "id": .number(Double(id)), "method": .string(method), "params": params]
         case let .rpcResult(id, result): fields = ["type": .string("rpcResult"), "id": .number(Double(id)), "result": result]
+        case let .serverRequest(id, method, params): fields = ["type": .string("serverRequest"), "id": id, "method": .string(method), "params": params]
+        case let .serverAnswer(id, result): fields = ["type": .string("serverAnswer"), "id": id, "result": result]
         case let .rpcError(id, error): fields = ["type": .string("rpcError"), "id": .number(Double(id)), "error": .object(["code": .number(Double(error.code)), "message": .string(error.message)])]
         case let .notification(method, params): fields = ["type": .string("notification"), "notification": .object(["method": .string(method), "params": params])]
         case .ping(let t): fields = ["type": .string("ping"), "t": .number(t)]
