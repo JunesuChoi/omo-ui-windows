@@ -51,6 +51,7 @@ export const TESTID = {
   questionOtherInput: "question-other-input",
   questionSubmit: "question-submit",
   workingIndicator: "working-indicator",
+  workingDetail: "working-detail",
   historyError: "history-error",
   omoActivityToggle: "omo-activity-toggle",
   omoActivity: "omo-activity",

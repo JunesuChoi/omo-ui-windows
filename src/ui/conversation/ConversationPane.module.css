@@ -187,3 +187,8 @@
 .jump:hover {
   background: var(--dsw-alias-button-floating-hover);
 }
+
+.workingDetail {
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}

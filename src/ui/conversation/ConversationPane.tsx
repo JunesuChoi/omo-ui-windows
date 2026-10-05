@@ -24,6 +24,7 @@ import { RenderBoundary } from "./RenderBoundary";
 import { TurnView } from "./TurnView";
 import { userMessageParts, UserBubble } from "./UserBubble";
 import { useStickToBottom } from "./use-stick-to-bottom";
+import { durationParts, QUIET_AFTER_MS, workingStatus } from "./working-status";
 import css from "./ConversationPane.module.css";
 
 const NO_TURNS: readonly ConversationTurn[] = [];
@@ -66,12 +67,29 @@ function HistoryError({ threadId, message }: { threadId: string; message: string
   );
 }
 
-function WorkingIndicator() {
+function WorkingIndicator({ turn }: { turn: ConversationTurn | null }) {
   const t = useT();
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const status = turn === null ? null : workingStatus(turn, nowMs);
+  const format = (ms: number): string => {
+    const { minutes, seconds } = durationParts(ms);
+    return minutes > 0 ? t("conversation.duration.minutes", { minutes, seconds }) : t("conversation.duration.seconds", { seconds });
+  };
   return (
-    <div className={css.working} data-testid={TESTID.workingIndicator} role="status">
+    <div className={css.working} data-testid={TESTID.workingIndicator} data-queued={status?.queuedMessage || undefined} role="status">
       <StateDot state="ongoing" size={12} />
       <TextShimmer active>{t("conversation.working")}</TextShimmer>
+      {status !== null && (
+        <span className={css.workingDetail} data-testid={TESTID.workingDetail}>
+          {format(status.elapsedMs)}
+          {status.idleMs >= QUIET_AFTER_MS && ` · ${t("conversation.working.lastActivity", { time: format(status.idleMs) })}`}
+          {status.queuedMessage && ` · ${t("conversation.working.queued")}`}
+        </span>
+      )}
     </div>
   );
 }
@@ -144,7 +162,7 @@ function Transcript({ threadId, cwd, turnActive }: { threadId: string; cwd: stri
           {conversation?.pendingUserMessages.map((message) => (
             <UserBubble key={message.clientId} text={message.text} images={userMessageParts(message.images ?? []).images} sending />
           ))}
-          {showWorking && <WorkingIndicator />}
+          {showWorking && <WorkingIndicator turn={activeTurn} />}
           {pending.map((request) => (
             <RenderBoundary key={requestKey(request)} label={`a ${request.kind} request`} resetKey={request}>
               <PendingRequestCard request={request} conversation={conversation} cwd={cwd} />

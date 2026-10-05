@@ -684,6 +684,10 @@ function runScenario(record, turn, text) {
     return;
   }
   if (text.includes("SCENARIO:full")) return runFull(record, turn);
+  // SCENARIO:quiet[:ms] streams nothing for ms (default 3000) before echoing, like a long model call with hidden thinking.
+  if (text.includes("SCENARIO:quiet")) {
+    return sleep(turn, Number(/SCENARIO:quiet:(\d+)/.exec(text)?.[1] ?? 3000)).then(() => runEcho(record, turn, text));
+  }
   if (text.includes("SCENARIO:slow")) return runSlow(record, turn);
   if (text.includes("SCENARIO:multi-question")) return runMultiQuestion(record, turn);
   if (text.includes("SCENARIO:flood")) return runFlood(record, turn, text);
