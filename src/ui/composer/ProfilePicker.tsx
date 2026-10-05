@@ -40,6 +40,9 @@ const FONT: Record<string, string> = {
   "-": "00000/00000/00000/11111/00000/00000/00000",
 };
 
+/** How long the LED readout scrambles from left to right before it settles on the new text. */
+const LED_SCRAMBLE_MS = 140;
+
 function Led({
   name,
   effort,
@@ -60,7 +63,7 @@ function Led({
     let frame = 0;
     const start = performance.now();
     const tick = (now: number) => {
-      const progress = Math.min(1, (now - start) / 300);
+      const progress = Math.min(1, (now - start) / LED_SCRAMBLE_MS);
       setPhase(progress);
       if (progress < 1) frame = requestAnimationFrame(tick);
     };
