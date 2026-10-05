@@ -214,7 +214,7 @@ export function reduce(state: AppState, event: AppEvent): AppState {
       });
     }
     case "composer/modelSelected":
-      return { ...state, composer: { modelId: event.modelId, effort: event.effort } };
+      return { ...state, composer: { modelId: event.modelId, effort: event.effort, profile: event.profile ?? null } };
     case "notice/pushed":
       return pushNotice(state, event.notice);
     case "notice/dismissed": {

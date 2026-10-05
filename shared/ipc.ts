@@ -63,6 +63,8 @@ export interface Diagnostics {
 export type ThemePreference = "system" | "light" | "dark";
 export type LocalePreference = "system" | "en" | "ko";
 
+export type ModelProfile = "daily-normal" | "daily-heavy" | "geeky-normal" | "geeky-heavy";
+
 export interface Preferences {
   theme: ThemePreference;
   locale: LocalePreference;
@@ -72,6 +74,7 @@ export interface Preferences {
   recentWorkspaces: string[];
   /** Model id chosen in the composer, or null for the omo default. */
   modelId: string | null;
+  modelProfile?: ModelProfile | null;
 }
 
 /** One turn reconstructed from a session JSONL file. */

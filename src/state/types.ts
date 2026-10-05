@@ -116,6 +116,7 @@ export interface Notice {
 }
 
 export interface ComposerState {
+  profile?: import("../../shared/ipc").ModelProfile | null;
   modelId: string | null;
   effort: ReasoningEffort | null;
 }
@@ -203,7 +204,7 @@ export type AppEvent =
   | { type: "turn/settled"; threadId: string; status: "completed" | "interrupted"; settledAtMs: number }
   | { type: "user/messageSent"; threadId: string; clientId: string; text: string; images?: readonly ImageInput[]; sentAtMs: number }
   | { type: "user/messageFailed"; threadId: string; clientId: string; message: string }
-  | { type: "composer/modelSelected"; modelId: string | null; effort: ReasoningEffort | null }
+  | { type: "composer/modelSelected"; modelId: string | null; effort: ReasoningEffort | null; profile?: import("../../shared/ipc").ModelProfile | null }
   | { type: "notice/pushed"; notice: Notice }
   | { type: "notice/dismissed"; id: string }
   | { type: "btw/restored"; sides: SideChat[] }

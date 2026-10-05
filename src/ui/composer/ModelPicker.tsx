@@ -7,6 +7,7 @@ import {
   IconChevronDownOutlineRegular,
   IconCloseFillRegular,
   IconDataOutlineRegular,
+  IconSparkleRegular,
   Input,
   MenuGroup,
   MenuSurface,
@@ -21,7 +22,8 @@ import { resolveComposerModel, selectActiveSessionModel } from "../../state";
 import { filterGroups, groupModels, resolveEffort } from "./model-groups";
 import css from "./ModelPicker.module.css";
 
-const SEARCH_THRESHOLD = 8;
+import { ProfilePicker } from "./ProfilePicker";
+import { resolveProfile } from "./model-profiles";
 const MENU_GAP = 8;
 const VIEWPORT_MARGIN = 12;
 
@@ -47,6 +49,8 @@ export function ModelPicker({ disabled }: { disabled: boolean }) {
   const effort = useAppSelector((state) => state.composer.effort);
   const session = useAppSelector(selectActiveSessionModel);
 
+  const profile = useAppSelector((state) => state.composer.profile ?? null);
+  const [tab, setTab] = useState<"profile" | "specific">("profile");
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [highlighted, setHighlighted] = useState(0);
@@ -60,7 +64,7 @@ export function ModelPicker({ disabled }: { disabled: boolean }) {
   const id = useId();
 
   const groups = useMemo(() => groupModels(models), [models]);
-  const showSearch = models.length > SEARCH_THRESHOLD;
+  const showSearch = true;
   const visibleGroups = useMemo(() => filterGroups(groups, showSearch ? query : ""), [groups, query, showSearch]);
   const visibleModels = useMemo(() => visibleGroups.flatMap((group) => group.models), [visibleGroups]);
   const current = resolveComposerModel(models, modelId, session);
@@ -69,7 +73,7 @@ export function ModelPicker({ disabled }: { disabled: boolean }) {
   const activeIndex = visibleModels.length === 0 ? -1 : Math.min(highlighted, visibleModels.length - 1);
 
   const effortLabel = currentEffort === null ? null : t(EFFORT_KEY[currentEffort]);
-  const modelLabel = current?.displayName ?? session?.model ?? t("composer.model.none");
+  const modelLabel = profile ? `${t(profile.startsWith("daily") ? "composer.profile.daily" : "composer.profile.geeky")}${profile.endsWith("heavy") ? ` · ${t("composer.profile.heavy")}` : ""}` : current?.displayName ?? session?.model ?? t("composer.model.none");
   const triggerAria =
     current === null
       ? t("composer.model.select")
@@ -93,9 +97,10 @@ export function ModelPicker({ disabled }: { disabled: boolean }) {
   useEffect(() => {
     if (!open || menuPos === null || !focusPending.current) return;
     focusPending.current = false;
-    if (showSearch) searchRef.current?.focus();
+    if (tab === "profile") menuRef.current?.querySelector<HTMLButtonElement>(`[data-testid="${TESTID.profileDot}"]`)?.focus();
+    else if (showSearch) searchRef.current?.focus();
     else optionRefs.current[activeIndex]?.focus();
-  }, [open, menuPos, showSearch, activeIndex]);
+  }, [open, menuPos, showSearch, activeIndex, tab]);
 
   useEffect(() => {
     const viewport = groupsRef.current;
@@ -130,7 +135,7 @@ export function ModelPicker({ disabled }: { disabled: boolean }) {
       window.removeEventListener("scroll", place, true);
       window.removeEventListener("resize", place);
     };
-  }, [open, visibleGroups, query, efforts.length]);
+  }, [open, visibleGroups, query, efforts.length, tab]);
 
   const show = (): void => {
     const currentIndex = current === null ? -1 : visibleModels.findIndex((model) => model.id === current.id);
@@ -179,6 +184,7 @@ export function ModelPicker({ disabled }: { disabled: boolean }) {
       }
       return;
     }
+    if (tab === "profile" || (event.target instanceof HTMLElement && event.target.getAttribute("role") === "tab")) return;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       moveHighlight(event.key === "ArrowDown" ? 1 : -1);
@@ -214,16 +220,17 @@ export function ModelPicker({ disabled }: { disabled: boolean }) {
         className={css.trigger}
         data-testid={TESTID.modelPicker}
         aria-label={triggerAria}
-        aria-haspopup="menu"
+        aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? `${id}-menu` : undefined}
         title={effortLabel === null ? modelLabel : `${modelLabel} · ${effortLabel}`}
         disabled={disabled}
         onClick={() => (open ? close(true) : show())}
       >
-        <IconDataOutlineRegular className={css.triggerIcon} size={14} />
+        {profile ? <IconSparkleRegular className={css.triggerIcon} size={14} /> : <IconDataOutlineRegular className={css.triggerIcon} size={14} />}
+        {profile && <span className={css.profileIndicator} data-geeky={profile.startsWith("geeky")} aria-hidden="true" />}
         <span className={css.triggerLabel}>{modelLabel}</span>
-        {effortLabel !== null && <span className={css.triggerEffort}>{effortLabel}</span>}
+        {profile === null && effortLabel !== null && <span className={css.triggerEffort}>{effortLabel}</span>}
         <IconChevronDownOutlineRegular className={clsx(css.chevron, open && css.chevronOpen)} size={12} />
       </button>
 
@@ -232,11 +239,19 @@ export function ModelPicker({ disabled }: { disabled: boolean }) {
           <MenuSurface
             ref={menuRef}
             id={`${id}-menu`}
-            className={css.menu}
+            className={clsx(css.menu, tab === "profile" && css.profileMenu)}
             style={menuPos ?? MEASURE_STYLE}
-            role="group"
+            role="dialog"
             aria-label={t("composer.model.label")}
           >
+            <div className={css.tabs} role="tablist" aria-label={t("composer.model.label")}>
+              <button type="button" role="tab" aria-selected={tab === "profile"} data-testid={TESTID.profileTab} onClick={() => setTab("profile")}>{t("composer.profile.tab")}</button>
+              <button type="button" role="tab" aria-selected={tab === "specific"} data-testid={TESTID.specificModelTab} onClick={() => { setTab("specific"); focusPending.current = true; }}>{t("composer.profile.specific")}</button>
+            </div>
+            {tab === "profile" ? <ProfilePicker models={models} current={profile} onSelect={(next) => {
+              const resolved = resolveProfile(models, next);
+              if (resolved.model) void actions.selectModel(resolved.model.id, resolved.effort, next);
+            }} /> : <>
             {showSearch && (
               <div className={css.searchRow}>
                 <Input
@@ -341,6 +356,7 @@ export function ModelPicker({ disabled }: { disabled: boolean }) {
                 </div>
               </div>
             )}
+            </>}
           </MenuSurface>,
           document.body,
         )}

@@ -868,12 +868,13 @@ async function runTurn(record, turn, input, clientId) {
 const MODELS = (DEMO?.models ?? [
   { id: "fake/alpha", model: "alpha", displayName: "Fake Alpha", isDefault: true },
   { id: "fake/beta", model: "beta", displayName: "Fake Beta", isDefault: false },
+  ...[ ["claude-opus-5-5", "Claude Opus 5.5"], ["claude-fable-5-1", "Claude Fable 5.1"], ["gpt-6-astra", "GPT-6 Astra"], ["gpt-6-sol-fast", "GPT-6 Sol Fast"] ].map(([id, displayName]) => ({ id, model: id, displayName, isDefault: false })) ,
 ]).map((model) => ({
   ...model,
   description: "",
   hidden: false,
   defaultReasoningEffort: "medium",
-  supportedReasoningEfforts: ["low", "medium", "high"].map((reasoningEffort) => ({ reasoningEffort, description: "" })),
+  supportedReasoningEfforts: ["low", "medium", "high", "xhigh"].map((reasoningEffort) => ({ reasoningEffort, description: "" })),
 }));
 
 const DEFAULT_SKILLS = [
