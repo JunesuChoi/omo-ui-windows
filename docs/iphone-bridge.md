@@ -1,0 +1,38 @@
+# iPhone bridge protocol
+
+OmO for iPhone controls omo on the Mac over the USB cable. No Wi-Fi or Bluetooth is involved: the Mac reaches the phone through Apple's USB multiplexer daemon (`/var/run/usbmuxd`), the same channel Xcode and Finder use.
+
+## Roles
+
+- **iPhone app** listens on TCP port **47101** on the device (loopback-reachable only through usbmux; it does not need the local network permission).
+- **OmO UI on the Mac** watches usbmuxd for attached iPhones and opens a connection to device port 47101 on each attached device. While OmO UI runs and its omo app-server is connected, the phone talks to that omo through the Mac.
+
+## usbmuxd (Mac side)
+
+Every usbmuxd packet is a 16-byte little-endian header `length` (header + body), `version` = 1, `message` = 8 (plist), `tag`, followed by an XML plist body.
+
+- `Listen`: `{MessageType: "Listen", ClientVersionString, ProgName}`. usbmuxd answers `Result` (`Number` 0 = ok), then sends `Attached` (`DeviceID`, `Properties.ConnectionType` = `USB`, `Properties.SerialNumber`) and `Detached` (`DeviceID`) messages on the same socket.
+- `Connect`: on a new socket, `{MessageType: "Connect", DeviceID, PortNumber, ...}` where `PortNumber` is the port in network byte order stored as an integer (47101 → `htons(47101)` = 64951). After `Result` 0 the socket is a raw byte stream to the phone.
+
+Only `ConnectionType` `USB` devices are used. A failed connect (the app is not running) is retried every 2 seconds while the device stays attached.
+
+## Frames (both directions)
+
+Each frame is a 4-byte big-endian unsigned length followed by that many bytes of UTF-8 JSON. Frames over 8 MiB close the connection.
+
+| Direction | Frame |
+|---|---|
+| Mac → phone | `{"type":"hello","version":1,"macName":string,"bridge":{"state":string}}` first, after the stream opens |
+| Mac → phone | `{"type":"bridgeStatus","state":"connected"\|"starting"\|"restarting"\|"failed"\|...}` when omo's state changes |
+| phone → Mac | `{"type":"rpc","id":number,"method":string,"params":object}` |
+| Mac → phone | `{"type":"rpcResult","id":number,"result":any}` or `{"type":"rpcError","id":number,"error":{"code":number,"message":string}}` |
+| Mac → phone | `{"type":"notification","notification":{"method":string,"params":object}}` for every omo app-server notification |
+| either | `{"type":"ping","t":number}` / `{"type":"pong","t":number}` every 10 s; a side that hears nothing for 30 s closes the stream |
+
+## Allowed methods
+
+The Mac forwards only: `thread/list`, `thread/start`, `thread/resume`, `thread/read`, `thread/goal/get`, `turn/start`, `turn/steer`, `turn/interrupt`, `model/list`, `skills/list`. Anything else gets `rpcError` code -32601 without reaching omo. Server requests from omo (approvals, questions) are not forwarded in version 1; the phone shows that the Mac needs attention.
+
+## Input rules
+
+omo 5.1.4 rejects `image`, `localImage`, `skill` and `mention` input items; the phone sends text items only.
