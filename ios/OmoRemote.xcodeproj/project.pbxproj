@@ -13,11 +13,14 @@
 		178FB8BE0000D86817B2343D /* ItemRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6AACF0F6464ED34B8883A73 /* ItemRowView.swift */; };
 		1AA8F374FA0FE115422A3761 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 77724A4CAF853F51B8ECA770 /* Localizable.strings */; };
 		303D3064FA85DCC7DB73BDA4 /* NewSessionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0D5F72CFA23E9B6F91F15A /* NewSessionSheet.swift */; };
+		381B30094D4DE09C34F952C6 /* MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96555353FC64CA89C82B9EDC /* MarkdownText.swift */; };
 		3AB76551C3BCF953901820ED /* ComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27B845E2FD6C601368BCF9E1 /* ComposerView.swift */; };
 		4E1C7F65A9E535A8BA3B17F4 /* ConnectionHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82A7A5D10EE7F179E26DCA08 /* ConnectionHeaderView.swift */; };
 		51F8F592B8998BA357C63A9A /* RemoteModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0701D56EAA7BD180C27E395B /* RemoteModel.swift */; };
 		96B0C0151DBC469898165BA3 /* OmoKit in Frameworks */ = {isa = PBXBuildFile; productRef = E092A4F0CC6FFFF5D175E594 /* OmoKit */; };
+		B069F1B42075850F3B8BDCD1 /* ApprovalSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C7E96B022B196BED73C4240 /* ApprovalSheet.swift */; };
 		C22D884DD0EE2599ADFCE9B3 /* ConversationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F84B7080DA94831BEED25E45 /* ConversationView.swift */; };
+		C4E15439CE102B6526985B51 /* DockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C4C86F0A2145DF8E3D1B70B /* DockView.swift */; };
 		CCDF0DF8879DF834DFFE54E4 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5BE36B3EFA78B985F4486861 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -27,11 +30,14 @@
 		1B0D5F72CFA23E9B6F91F15A /* NewSessionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewSessionSheet.swift; sourceTree = "<group>"; };
 		1D468A5D0ECAA85406DF04BB /* ko */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ko; path = ko.lproj/Localizable.strings; sourceTree = "<group>"; };
 		27B845E2FD6C601368BCF9E1 /* ComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerView.swift; sourceTree = "<group>"; };
+		2C4C86F0A2145DF8E3D1B70B /* DockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockView.swift; sourceTree = "<group>"; };
 		5BE36B3EFA78B985F4486861 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		6A34E0B5A54A11540DD0072D /* OmoRemote.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OmoRemote.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		81BC65E9249E02BBA57D0142 /* USBListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USBListener.swift; sourceTree = "<group>"; };
 		8206359CED8717C620EBF924 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		82A7A5D10EE7F179E26DCA08 /* ConnectionHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionHeaderView.swift; sourceTree = "<group>"; };
+		96555353FC64CA89C82B9EDC /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
+		9C7E96B022B196BED73C4240 /* ApprovalSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalSheet.swift; sourceTree = "<group>"; };
 		A335900B99925A1D71549F9D /* RemoteViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteViews.swift; sourceTree = "<group>"; };
 		AE44199EF97CEA2D288BAEB3 /* OmoKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = OmoKit; path = OmoKit; sourceTree = SOURCE_ROOT; };
 		D6AACF0F6464ED34B8883A73 /* ItemRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemRowView.swift; sourceTree = "<group>"; };
@@ -53,11 +59,14 @@
 		01A8572A7B280D0D3C3BE3F8 /* OmoRemote */ = {
 			isa = PBXGroup;
 			children = (
+				9C7E96B022B196BED73C4240 /* ApprovalSheet.swift */,
 				5BE36B3EFA78B985F4486861 /* Assets.xcassets */,
 				27B845E2FD6C601368BCF9E1 /* ComposerView.swift */,
 				82A7A5D10EE7F179E26DCA08 /* ConnectionHeaderView.swift */,
 				F84B7080DA94831BEED25E45 /* ConversationView.swift */,
+				2C4C86F0A2145DF8E3D1B70B /* DockView.swift */,
 				D6AACF0F6464ED34B8883A73 /* ItemRowView.swift */,
+				96555353FC64CA89C82B9EDC /* MarkdownText.swift */,
 				1B0D5F72CFA23E9B6F91F15A /* NewSessionSheet.swift */,
 				0931FC2477B54F61144CEE07 /* OmoRemoteApp.swift */,
 				0701D56EAA7BD180C27E395B /* RemoteModel.swift */,
@@ -171,10 +180,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B069F1B42075850F3B8BDCD1 /* ApprovalSheet.swift in Sources */,
 				3AB76551C3BCF953901820ED /* ComposerView.swift in Sources */,
 				4E1C7F65A9E535A8BA3B17F4 /* ConnectionHeaderView.swift in Sources */,
 				C22D884DD0EE2599ADFCE9B3 /* ConversationView.swift in Sources */,
+				C4E15439CE102B6526985B51 /* DockView.swift in Sources */,
 				178FB8BE0000D86817B2343D /* ItemRowView.swift in Sources */,
+				381B30094D4DE09C34F952C6 /* MarkdownText.swift in Sources */,
 				303D3064FA85DCC7DB73BDA4 /* NewSessionSheet.swift in Sources */,
 				0B19B6E954D8ED6E48C6147B /* OmoRemoteApp.swift in Sources */,
 				51F8F592B8998BA357C63A9A /* RemoteModel.swift in Sources */,
