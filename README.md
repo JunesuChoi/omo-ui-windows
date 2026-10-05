@@ -125,6 +125,22 @@ The same window on the installed omo with a real model, with the sidebar collaps
 
 Requirements: macOS 12 (Monterey) or later on Apple silicon, and omo from the official installer (`curl -fsSL https://get.omo.dev/install.sh | bash`). If omo is missing, the onboarding screen offers to run the installer. Building from source needs Node.js 22 or later and npm.
 
+### Homebrew
+
+```sh
+brew install --cask realsigridjin/tap/omo-ui
+```
+
+The cask installs the latest GitHub release into `/Applications` and clears the quarantine flag, because the app is ad-hoc signed and Gatekeeper would otherwise refuse to open it. `brew upgrade --cask omo-ui` updates it; quit OmO UI first.
+
+### One-line script
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/realsigridjin/omo-ui-macosapp/main/scripts/install.sh | bash
+```
+
+The script downloads the arm64 zip of the latest release, replaces `/Applications/OmO UI.app` (set `OMO_UI_APP_DIR` to install elsewhere), clears the quarantine flag, and refuses to run while OmO UI is open.
+
 ### From source
 
 ```sh
