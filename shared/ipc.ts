@@ -132,7 +132,15 @@ export interface OpenTarget {
   id: OpenTargetId;
 }
 
+export interface IphoneStatus {
+  enabled: boolean;
+  state: "searching" | "connecting" | "connected";
+  devices: { id: number; name: string; serial: string; state: "connecting" | "connected" }[];
+}
+
 export interface OmoBridgeApi {
+  getIphoneStatus(): Promise<IphoneStatus>;
+  onIphoneStatus(listener: (status: IphoneStatus) => void): () => void;
   getStatus(): Promise<BridgeStatus>;
   onStatus(listener: (status: BridgeStatus) => void): () => void;
   /** Sends one app-server request; rejects with Error("<code>: <message>") on an RPC error or when not connected. */
@@ -170,6 +178,8 @@ export interface OmoBridgeApi {
 
 /** IPC channel names. Invoke channels use ipcRenderer.invoke; event channels use webContents.send. */
 export const IPC = {
+  getIphoneStatus: "iphone:get-status",
+  iphoneStatus: "iphone:status",
   getStatus: "omo:get-status",
   status: "omo:status",
   request: "omo:request",

@@ -17,7 +17,10 @@ import type { OpenWorkspace } from "./open-workspace";
 import type { OmoSupervisor } from "./omo/supervisor";
 import type { PreferencesStore } from "./prefs";
 
+import type { IphoneBridge } from "./iphone/bridge";
+
 export interface IpcDeps {
+  iphone?: IphoneBridge;
   supervisor: OmoSupervisor;
   prefs: PreferencesStore;
   getWindow: () => BrowserWindow | null;
@@ -67,6 +70,7 @@ export function registerIpc(deps: IpcDeps): () => void {
   let installing: Promise<InstallResult> | null = null;
 
   const handlers: Record<string, (event: Electron.IpcMainInvokeEvent, ...args: unknown[]) => unknown> = {
+    [IPC.getIphoneStatus]: () => deps.iphone?.getStatus() ?? { enabled: false, state: "searching", devices: [] },
     [IPC.getStatus]: () => supervisor.getStatus(),
     [IPC.request]: async (_event, method, params): Promise<RequestEnvelope> => {
       if (!isClientMethod(method)) {
@@ -172,6 +176,7 @@ export function registerIpc(deps: IpcDeps): () => void {
 
   for (const [channel, handler] of Object.entries(handlers)) ipcMain.handle(channel, handler);
   const unsubscribers = [
+    ...(deps.iphone ? [deps.iphone.onStatus((status) => send(IPC.iphoneStatus, status))] : []),
     supervisor.onStatus((status) => send(IPC.status, status)),
     supervisor.onNotification((notification) => send(IPC.notification, notification)),
     supervisor.onServerRequest((request) => send(IPC.serverRequest, request)),

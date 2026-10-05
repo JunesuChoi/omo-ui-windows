@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { IpcRendererEvent } from "electron";
 import type {
+  IphoneStatus,
   BridgeStatus,
   Diagnostics,
   HistoryResult,
@@ -19,6 +20,8 @@ import { stripRemoteMethodPrefix } from "./ipc-errors";
 
 // The sandboxed preload can require only "electron", so the channel table is restated here; `satisfies` keeps it equal to IPC.
 const CHANNELS = {
+  getIphoneStatus: "iphone:get-status",
+  iphoneStatus: "iphone:status",
   getStatus: "omo:get-status",
   status: "omo:status",
   request: "omo:request",
@@ -61,6 +64,8 @@ function subscribe<T>(channel: string, listener: (payload: T) => void): () => vo
 }
 
 const api = {
+  getIphoneStatus: (): Promise<IphoneStatus> => invoke(CHANNELS.getIphoneStatus),
+  onIphoneStatus: (listener: (status: IphoneStatus) => void) => subscribe(CHANNELS.iphoneStatus, listener),
   getStatus: (): Promise<BridgeStatus> => invoke(CHANNELS.getStatus),
   onStatus: (listener: (status: BridgeStatus) => void) => subscribe(CHANNELS.status, listener),
   async request<M extends ClientMethod>(method: M, params: ClientParams<M>): Promise<ClientResult<M>> {

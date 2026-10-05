@@ -32,6 +32,8 @@
 
 OmO UI runs the omo you installed with `curl -fsSL https://get.omo.dev/install.sh | bash`. It starts `omo app-server` with your login-shell environment, so it uses the same sessions, skills, models and credentials as omo in your terminal. The interface comes from the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) web GUI (MIT), restyled and rewired for omo.
 
+OmO for iPhone can control this Mac's omo over a USB cable: install the iPhone app, connect the cable, and open it. Settings > iPhone shows the connection and device. The bridge is on by default; set `OMO_UI_IPHONE_BRIDGE=0` to disable it. See [the USB protocol](docs/iphone-bridge.md).
+
 - **Skills on `/`**: pick `/ulw-loop`, `/mass-ulw` or any skill omo can load for the workspace; several skills can go into one message.
 - **Watch the agents work**: DAG runs, waves, child tasks, todos and the session goal update live while omo works.
 - **Ask on the side with `/btw`**: a side chat answers from the session's context in its own panel and never touches the session.

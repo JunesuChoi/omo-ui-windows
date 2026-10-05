@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, shell } from "electron";
 import { ENV, IPC } from "../shared/ipc";
 import type { MenuCommand } from "../shared/ipc";
+import { IphoneBridge } from "./iphone/bridge";
 import { registerIpc } from "./ipc";
 import { installApplicationMenu } from "./menu";
 import { OmoSupervisor } from "./omo/supervisor";
@@ -95,6 +96,8 @@ function run(): void {
   const homeDir = os.homedir();
   const supervisor = new OmoSupervisor({ homeDir, baseEnv: process.env, clientVersion: app.getVersion() });
 
+  const iphone = new IphoneBridge(supervisor);
+
   app.on("second-instance", () => {
     if (app.isReady()) focusWindow();
   });
@@ -103,8 +106,9 @@ function run(): void {
     if (!app.isPackaged) app.dock?.setIcon(path.join(__dirname, "../build/icon.png"));
     const prefs = new PreferencesStore(app.getPath("userData"));
     installApplicationMenu(sendMenuCommand);
-    registerIpc({ supervisor, prefs, getWindow: () => mainWindow, homeDir });
+    registerIpc({ supervisor, iphone, prefs, getWindow: () => mainWindow, homeDir });
     createWindow();
+    iphone.start();
     void supervisor.start();
   });
 
@@ -122,6 +126,7 @@ function run(): void {
     event.preventDefault();
     if (quitPhase === "stopping") return;
     quitPhase = "stopping";
+    iphone.stop();
     let timer: NodeJS.Timeout | undefined;
     const bounded = new Promise<void>((resolve) => {
       timer = setTimeout(() => {
