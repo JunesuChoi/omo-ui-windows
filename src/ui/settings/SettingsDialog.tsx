@@ -15,17 +15,19 @@ import { uiState, useUiState } from "../ui-state";
 import { AboutSection } from "./AboutSection";
 import { GeneralSection } from "./GeneralSection";
 import { OmoSection } from "./OmoSection";
+import { IphoneSection } from "./IphoneSection";
 import { McpSection } from "./McpSection";
 import css from "./SettingsDialog.module.css";
 
-type SectionId = "general" | "omo" | "mcp" | "about";
+type SectionId = "general" | "omo" | "mcp" | "iphone" | "about";
 
-const SECTIONS: readonly SectionId[] = ["general", "omo", "mcp", "about"];
+const SECTIONS: readonly SectionId[] = ["general", "omo", "mcp", "iphone", "about"];
 
 function NavIcon({ section }: { section: SectionId }) {
   switch (section) {
     case "general":
       return <IconSettingsOutlineMedium className={css.navIcon} size={16} />;
+    case "iphone":
     case "mcp":
     case "omo":
       return <IconDataOutlineMedium className={css.navIcon} size={16} />;
@@ -83,6 +85,7 @@ function SettingsPanel({ section, onSelect, onClose }: { section: SectionId; onS
             {section === "general" && <GeneralSection />}
             {section === "omo" && <OmoSection />}
             {section === "mcp" && <McpSection />}
+            {section === "iphone" && <IphoneSection />}
             {section === "about" && <AboutSection />}
           </div>
         </div>

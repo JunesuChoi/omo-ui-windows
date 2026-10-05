@@ -61,6 +61,8 @@ function bridgeStatus(state: BridgeStatus["state"]): BridgeStatus {
 }
 
 class FakeBridge implements OmoBridgeApi {
+  getIphoneStatus(): ReturnType<OmoBridgeApi["getIphoneStatus"]> { return Promise.resolve({ enabled: false, state: "searching", devices: [] }); }
+  onIphoneStatus(): () => void { return () => {}; }
   readonly platform = "darwin";
   readonly calls: Array<{ method: ClientMethod; params: unknown }> = [];
   readonly responses: Array<{ id: RequestId; result: unknown }> = [];

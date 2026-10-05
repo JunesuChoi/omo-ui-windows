@@ -1,5 +1,13 @@
 export const messages = {
   en: {
+    "shell.settings.nav.iphone": "iPhone",
+    "shell.settings.iphone.intro": "Install OmO for iPhone, connect the USB cable to this Mac, then open the app on your iPhone.",
+    "shell.settings.iphone.searching": "Not connected",
+    "shell.settings.iphone.connecting": "Connecting",
+    "shell.settings.iphone.connected": "Connected",
+    "shell.settings.iphone.disabled": "Disabled by OMO_UI_IPHONE_BRIDGE=0",
+    "shell.settings.iphone.device": "Device",
+    "shell.settings.iphone.error": "Status unavailable: {message}",
     "shell.newSession": "New thread",
     "shell.newProject": "New project",
     "shell.devBadge": "DEV",
@@ -139,6 +147,14 @@ export const messages = {
     "shell.banner.restartFailed": "Restart failed: {message}",
   },
   ko: {
+    "shell.settings.nav.iphone": "iPhone",
+    "shell.settings.iphone.intro": "iPhone에 OmO를 설치하고 USB 케이블로 이 Mac에 연결한 다음 iPhone에서 앱을 여세요.",
+    "shell.settings.iphone.searching": "연결되지 않음",
+    "shell.settings.iphone.connecting": "연결 중",
+    "shell.settings.iphone.connected": "연결됨",
+    "shell.settings.iphone.disabled": "OMO_UI_IPHONE_BRIDGE=0으로 비활성화됨",
+    "shell.settings.iphone.device": "기기",
+    "shell.settings.iphone.error": "상태를 확인할 수 없습니다: {message}",
     "shell.newSession": "새 스레드",
     "shell.newProject": "새 프로젝트",
     "shell.devBadge": "DEV",

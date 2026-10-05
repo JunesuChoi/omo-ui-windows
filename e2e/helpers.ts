@@ -95,6 +95,7 @@ export async function launchApp(options: LaunchOptions): Promise<LaunchedApp> {
     env["FAKE_OMO_LOG"] = fakeLog;
   }
 
+  env["OMO_UI_IPHONE_BRIDGE"] = "0";
   Object.assign(env, options.extraEnv ?? {});
 
   const removeCreated = (): void => {

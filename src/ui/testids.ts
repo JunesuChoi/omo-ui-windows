@@ -16,6 +16,8 @@ export const TESTID = {
   threadRow: "thread-row",
   threadMenu: "thread-menu",
   openSettings: "open-settings",
+  settingsIphone: "settings-iphone",
+  iphoneStatus: "iphone-status",
   settingsMcp: "settings-mcp",
   mcpServer: "mcp-server",
   mcpServerTools: "mcp-server-tools",
