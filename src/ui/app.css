@@ -46,6 +46,29 @@ html[data-platform='darwin'] :is(
   -webkit-app-region: no-drag;
 }
 
+@property --dsh-theme-reveal-radius {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+/* Keep transparent snapshot pixels transparent to native macOS vibrancy. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-old(root) {
+  /* currentColor supplies mask alpha only, not a painted color. */
+  mask-image: radial-gradient(circle at var(--dsh-theme-reveal-x) var(--dsh-theme-reveal-y),
+    transparent var(--dsh-theme-reveal-radius), currentColor var(--dsh-theme-reveal-radius));
+}
+
+::view-transition-image-pair(root) {
+  isolation: auto;
+}
+
 code,
 pre,
 [data-diff],
