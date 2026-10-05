@@ -55,13 +55,19 @@ import Foundation
         }
     }
 
+    // Work calls run as long as omo works, so an override only shortens the read-only deadline.
+    private func deadline(for method: String) -> UInt64? {
+        guard let base = Self.timeout(for: method) else { return nil }
+        return timeoutOverride?(method) ?? base
+    }
+
     public func call(_ method: String, params: JSONValue = .object([:])) async throws -> JSONValue {
         let id = nextID
         nextID += 1
         return try await withTaskCancellationHandler(operation: {
             try Task.checkCancellation()
             return try await withCheckedThrowingContinuation { continuation in
-                enqueue(id: id, method: method, params: params, timeoutNanoseconds: timeoutOverride?(method) ?? Self.timeout(for: method), continuation: continuation)
+                enqueue(id: id, method: method, params: params, timeoutNanoseconds: deadline(for: method), continuation: continuation)
             }
         }, onCancel: { Task { @MainActor [weak self] in self?.finish(id, .failure(Failure.cancelled)) } })
     }

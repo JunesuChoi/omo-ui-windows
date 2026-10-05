@@ -64,6 +64,7 @@ public struct WorkspaceGroup: Identifiable {
     public var id: String { cwd }
     public let cwd: String
     public let threads: [ConversationThread]
+    public init(cwd: String, threads: [ConversationThread]) { self.cwd = cwd; self.threads = threads }
 }
 
 public struct TurnRequest: Equatable {

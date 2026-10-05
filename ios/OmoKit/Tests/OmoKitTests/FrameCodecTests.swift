@@ -58,7 +58,8 @@ final class FrameCodecTests: XCTestCase {
     }
     func testNineMiBLengthRejected() {
         var codec = FrameCodec()
-        XCTAssertThrowsError(try codec.append(Data([0, 128, 0, 0]))) { XCTAssertEqual($0 as? FrameCodec.Failure, .oversizedFrame) }
+        // 0x00900000 is 9 MiB, one MiB over the 8 MiB maximum.
+        XCTAssertThrowsError(try codec.append(Data([0, 144, 0, 0]))) { XCTAssertEqual($0 as? FrameCodec.Failure, .oversizedFrame) }
     }
     func testUnknownFrameIgnoredByClientContract() throws {
         let body = Data(#"{"type":"future","extra":42}"#.utf8)

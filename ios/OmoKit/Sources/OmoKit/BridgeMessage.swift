@@ -3,14 +3,32 @@ import Foundation
 public enum JSONValue: Codable, Equatable, Sendable {
     case object([String: JSONValue]), array([JSONValue]), string(String), number(Double), bool(Bool), null
 
+    private struct Key: CodingKey {
+        let stringValue: String
+        init(stringValue: String) { self.stringValue = stringValue }
+        var intValue: Int? { nil }
+        init?(intValue: Int) { nil }
+    }
+
+    // Objects and arrays are read through their own containers; decoding `{}` as a single value fails.
     public init(from decoder: Decoder) throws {
+        if let keyed = try? decoder.container(keyedBy: Key.self) {
+            var object: [String: JSONValue] = [:]
+            for key in keyed.allKeys { object[key.stringValue] = try keyed.decode(JSONValue.self, forKey: key) }
+            self = .object(object)
+            return
+        }
+        if var unkeyed = try? decoder.unkeyedContainer() {
+            var array: [JSONValue] = []
+            while !unkeyed.isAtEnd { array.append(try unkeyed.decode(JSONValue.self)) }
+            self = .array(array)
+            return
+        }
         let c = try decoder.singleValueContainer()
         if c.decodeNil() { self = .null }
         else if let v = try? c.decode(Bool.self) { self = .bool(v) }
         else if let v = try? c.decode(Double.self) { self = .number(v) }
-        else if let v = try? c.decode(String.self) { self = .string(v) }
-        else if let v = try? c.decode([JSONValue].self) { self = .array(v) }
-        else { self = .object(try c.decode([String: JSONValue].self)) }
+        else { self = .string(try c.decode(String.self)) }
     }
     public func encode(to encoder: Encoder) throws {
         var c = encoder.singleValueContainer()
